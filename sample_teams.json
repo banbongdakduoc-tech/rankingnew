@@ -1,0 +1,62 @@
+{
+  "Dược K70": [
+    { "soAo": 1, "ten": "Trần Văn Hùng", "tenAo": "V.HÙNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HungK70" },
+    { "soAo": 4, "ten": "Lê Hoàng Long", "tenAo": "H.LONG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=LongK70" },
+    { "soAo": 7, "ten": "Nguyễn Minh Triết", "tenAo": "M.TRIẾT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TrietK70" },
+    { "soAo": 8, "ten": "Phạm Quốc Bảo", "tenAo": "Q.BẢO", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=BaoK70" },
+    { "soAo": 9, "ten": "Võ Hoàng Nam", "tenAo": "H.NAM", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=NamK70" },
+    { "soAo": 10, "ten": "Đặng Tuấn Anh", "tenAo": "T.ANH", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=AnhK70" },
+    { "soAo": 11, "ten": "Bùi Đức Thịnh", "tenAo": "Đ.THỊNH", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ThinhK70" },
+    { "soAo": 14, "ten": "Ngô Văn Quân", "tenAo": "V.QUÂN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=QuanK70" }
+  ],
+  "Dược K71": [
+    { "soAo": 1, "ten": "Nguyễn Thành Đạt", "tenAo": "T.ĐẠT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=DatK71" },
+    { "soAo": 3, "ten": "Phan Hữu Thắng", "tenAo": "H.THẮNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ThangK71" },
+    { "soAo": 6, "ten": "Vũ Minh Quân", "tenAo": "M.QUÂN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=QuanK71" },
+    { "soAo": 7, "ten": "Hoàng Xuân Bách", "tenAo": "X.BÁCH", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=BachK71" },
+    { "soAo": 9, "ten": "Đỗ Quang Hải", "tenAo": "Q.HẢI", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HaiK71" },
+    { "soAo": 10, "ten": "Lý Gia Bảo", "tenAo": "G.BẢO", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=BaoK71" },
+    { "soAo": 12, "ten": "Trịnh Công Sơn", "tenAo": "C.SƠN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=SonK71" },
+    { "soAo": 19, "ten": "Hồ Duy Khánh", "tenAo": "D.KHÁNH", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=KhanhK71" }
+  ],
+  "Dược K72": [
+    { "soAo": 1, "ten": "Cao Văn Tiến", "tenAo": "V.TIẾN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TienK72" },
+    { "soAo": 5, "ten": "Dương Quốc Cường", "tenAo": "Q.CƯỜNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=CuongK72" },
+    { "soAo": 7, "ten": "Tô Minh Huy", "tenAo": "M.HUY", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HuyK72" },
+    { "soAo": 8, "ten": "Lương Hải Đăng", "tenAo": "H.ĐĂNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=DangK72" },
+    { "soAo": 9, "ten": "Đinh Trọng Nghĩa", "tenAo": "T.NGHĨA", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=NghiaK72" },
+    { "soAo": 10, "ten": "Phạm Văn Đức", "tenAo": "V.ĐỨC", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=DucK72" },
+    { "soAo": 17, "ten": "Nguyễn Hoàng Việt", "tenAo": "H.VIỆT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=VietK72" },
+    { "soAo": 22, "ten": "Trần Anh Dũng", "tenAo": "A.DŨNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=DungK72" }
+  ],
+  "Dược K73": [
+    { "soAo": 1, "ten": "Lâm Quốc Tuấn", "tenAo": "Q.TUẤN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TuanK73" },
+    { "soAo": 2, "ten": "Mai Thế Hùng", "tenAo": "T.HÙNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HungK73" },
+    { "soAo": 7, "ten": "Chu Minh Phong", "tenAo": "M.PHONG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=PhongK73" },
+    { "soAo": 8, "ten": "Hà Trọng Hưng", "tenAo": "T.HƯNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HungTK73" },
+    { "soAo": 9, "ten": "Tăng Bảo Long", "tenAo": "B.LONG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=LongBK73" },
+    { "soAo": 10, "ten": "Phan Đình Luật", "tenAo": "Đ.LUẬT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=LuatK73" },
+    { "soAo": 11, "ten": "Ngô Thế Khải", "tenAo": "T.KHẢI", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=KhaiK73" },
+    { "soAo": 21, "ten": "Đặng Quốc Việt", "tenAo": "Q.VIỆT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=VietQK73" }
+  ],
+  "Cao Học Dược": [
+    { "soAo": 1, "ten": "Vương Đình Sang", "tenAo": "Đ.SANG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=SangCH" },
+    { "soAo": 4, "ten": "Thái Văn Quyết", "tenAo": "V.QUYẾT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=QuyetCH" },
+    { "soAo": 6, "ten": "Phạm Hữu Đạt", "tenAo": "H.ĐẠT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=DatHCH" },
+    { "soAo": 7, "ten": "Nguyễn Khắc Chung", "tenAo": "K.CHUNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ChungCH" },
+    { "soAo": 8, "ten": "Đoàn Văn Thiện", "tenAo": "V.THIỆN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ThienCH" },
+    { "soAo": 10, "ten": "Lê Tuấn Vũ", "tenAo": "T.VŨ", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=VuCH" },
+    { "soAo": 13, "ten": "Bùi Văn Thuận", "tenAo": "V.THUẬN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=ThuanCH" },
+    { "soAo": 18, "ten": "Trần Trọng Tấn", "tenAo": "T.TẤN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TanCH" }
+  ],
+  "Giảng Viên Dược": [
+    { "soAo": 1, "ten": "TS. Nguyễn Minh Hải", "tenAo": "M.HẢI", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HaiGV" },
+    { "soAo": 5, "ten": "ThS. Lê Hoàng An", "tenAo": "H.AN", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=AnGV" },
+    { "soAo": 6, "ten": "ThS. Trần Đình Trọng", "tenAo": "Đ.TRỌNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=TrongGV" },
+    { "soAo": 8, "ten": "TS. Vũ Hải Đăng", "tenAo": "H.ĐĂNG", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=DangGV" },
+    { "soAo": 9, "ten": "ThS. Phạm Tuấn Kiệt", "tenAo": "T.KIỆT", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=KietGV" },
+    { "soAo": 10, "ten": "PGS.TS. Đỗ Văn Nam", "tenAo": "V.NAM", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=NamGV" },
+    { "soAo": 11, "ten": "ThS. Hoàng Quốc Huy", "tenAo": "Q.HUY", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=HuyGV" },
+    { "soAo": 16, "ten": "ThS. Ngô Văn Phúc", "tenAo": "V.PHÚC", "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=PhucGV" }
+  ]
+}

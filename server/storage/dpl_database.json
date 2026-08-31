@@ -1,0 +1,15 @@
+{
+  "tourStatus": "none",
+  "tourConfig": {
+    "name": "Dược Premier League 2026",
+    "format": "group",
+    "numGroups": 2,
+    "knockoutFormat": "quarter",
+    "halfDuration": 20
+  },
+  "groupsData": [],
+  "matches": {},
+  "players": {},
+  "suspensions": {},
+  "handledViolations": {}
+}
