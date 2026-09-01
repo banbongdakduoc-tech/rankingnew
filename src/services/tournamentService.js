@@ -56,9 +56,22 @@ export function calculateGroupStandings(teams = [], matches = []) {
     };
   });
 
-  // Sắp xếp: Điểm giảm dần -> Hiệu số bàn thắng bại -> Tổng bàn thắng -> Tên đội
+  // Sắp xếp chuẩn bóng đá: Điểm (pts) -> Đối đầu trực tiếp (H2H) -> Hiệu số (gd) -> Tổng bàn thắng (gf) -> Tên đội
   return standings.sort((a, b) => {
     if (b.pts !== a.pts) return b.pts - a.pts;
+
+    // Xét kết quả đối đầu trực tiếp nếu 2 đội bằng điểm
+    const h2hMatch = matches.find(
+      (m) =>
+        (m.status === 'Đã xong' || m.status === 'Đang LIVE') &&
+        ((m.home === a.name && m.away === b.name) || (m.home === b.name && m.away === a.name))
+    );
+    if (h2hMatch) {
+      const aScore = h2hMatch.home === a.name ? Number(h2hMatch.scoreA) || 0 : Number(h2hMatch.scoreB) || 0;
+      const bScore = h2hMatch.home === b.name ? Number(h2hMatch.scoreA) || 0 : Number(h2hMatch.scoreB) || 0;
+      if (bScore !== aScore) return bScore - aScore;
+    }
+
     if (b.gd !== a.gd) return b.gd - a.gd;
     if (b.gf !== a.gf) return b.gf - a.gf;
     return a.name.localeCompare(b.name, 'vi');

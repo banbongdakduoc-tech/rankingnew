@@ -513,7 +513,20 @@ export default function AdminDashboard() {
   // 6. PHÊ DUYỆT & SỬA BIÊN BẢN (LOGIC CHẶT CHẼ)
   // ==========================================
   const handleOpenReview = (match) => {
-    setReviewingMatch(JSON.parse(JSON.stringify(match)));
+    const clone = JSON.parse(JSON.stringify(match));
+    if (clone.group === 'Vòng Knock-out' && !clone.advancingTeam) {
+      const sA = Number(clone.scoreA) || 0;
+      const sB = Number(clone.scoreB) || 0;
+      if (sA > sB) clone.advancingTeam = clone.home;
+      else if (sB > sA) clone.advancingTeam = clone.away;
+      else if (clone.penA !== undefined && clone.penB !== undefined && clone.penA !== '' && clone.penB !== '') {
+        const pA = Number(clone.penA) || 0;
+        const pB = Number(clone.penB) || 0;
+        if (pA > pB) clone.advancingTeam = clone.home;
+        else if (pB > pA) clone.advancingTeam = clone.away;
+      }
+    }
+    setReviewingMatch(clone);
     setRevEvTeam('');
     setRevEvPlayer('');
     setRevEvMin('');
