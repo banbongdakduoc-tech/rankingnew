@@ -23,7 +23,8 @@ const DEFAULT_STATE = {
   matches: {},
   players: {},
   suspensions: {},
-  handledViolations: {}
+  handledViolations: {},
+  accounts: {}
 };
 
 class Database {

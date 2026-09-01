@@ -1,27 +1,8 @@
-// server/routes/auth.js
 import express from 'express';
+import { db } from '../config/db.js';
 import { generateToken, verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
-
-// Danh sách tài khoản quản trị nội bộ
-// Có thể mở rộng hoặc cấu hình qua biến môi trường
-const USERS = [
-  {
-    id: 'u_btc',
-    username: process.env.ADMIN_USER || 'admin',
-    password: process.env.ADMIN_PASSWORD || 'btc2026',
-    role: 'admin',
-    name: 'Ban Tổ Chức Giải Đấu'
-  },
-  {
-    id: 'u_thuky',
-    username: process.env.REFEREE_USER || 'thuky',
-    password: process.env.REFEREE_PASSWORD || 'thuky2026',
-    role: 'referee',
-    name: 'Tổ Thư Ký Bàn Trọng Tài'
-  }
-];
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -31,24 +12,31 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu' });
   }
 
-  const found = USERS.find((u) => u.username === username.trim() && u.password === password.trim());
+  const cleanUser = username.trim().toLowerCase();
+  const cleanPass = password.trim();
 
-  if (!found) {
+  // Kiểm tra tài khoản từ cơ sở dữ liệu
+  const accounts = db.get('accounts') || {};
+  const found = accounts[cleanUser];
+
+  if (!found || found.password !== cleanPass) {
     return res.status(401).json({ success: false, message: 'Tên đăng nhập hoặc mật khẩu không chính xác' });
   }
 
-  const token = generateToken(found);
+  const userObj = {
+    id: cleanUser,
+    username: cleanUser,
+    role: found.role || 'referee',
+    name: found.name || cleanUser
+  };
+
+  const token = generateToken(userObj);
 
   return res.json({
     success: true,
-    message: `Đăng nhập thành công với vai trò ${found.role === 'admin' ? 'Ban Tổ Chức' : 'Thư Ký Bàn'}`,
+    message: `Đăng nhập thành công với vai trò ${userObj.role === 'admin' ? 'Ban Tổ Chức' : 'Thư Ký Bàn'}`,
     token,
-    user: {
-      id: found.id,
-      username: found.username,
-      role: found.role,
-      name: found.name
-    }
+    user: userObj
   });
 });
 
