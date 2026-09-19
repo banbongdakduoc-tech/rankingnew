@@ -25,7 +25,8 @@ import {
   Shield,
   FileText,
   RotateCcw,
-  Printer
+  Printer,
+  Camera
 } from 'lucide-react';
 import { useToast } from '../components/ToastContext';
 import {
@@ -37,7 +38,8 @@ import {
   isGroupStageFinished,
   getQualifyingCount,
   calculateEventsGoals,
-  generateKnockoutPairs
+  generateKnockoutPairs,
+  compressAvatarImage
 } from '../services/tournamentService';
 import KnockoutBracket from '../components/KnockoutBracket';
 import MatchPrintReport from '../components/MatchPrintReport';
@@ -155,7 +157,7 @@ export default function AdminDashboard() {
 
   // Player Management Tab State
   const [playerTab, setPlayerTab] = useState('upload'); // 'upload' | 'edit'
-  const [newPlayer, setNewPlayer] = useState({ team: '', num: '', name: '', shirtName: '' });
+  const [newPlayer, setNewPlayer] = useState({ team: '', num: '', name: '', shirtName: '', avatar: '' });
 
   const handleSelectEditTeam = (tName) => {
     setEditTeam(tName);
@@ -656,7 +658,7 @@ export default function AdminDashboard() {
 
     const teamPlayers = players[newPlayer.team] || [];
     set(ref(db, `players/${newPlayer.team}`), [...teamPlayers, { ...newPlayer }]);
-    setNewPlayer({ ...newPlayer, num: '', name: '', shirtName: '' });
+    setNewPlayer({ ...newPlayer, num: '', name: '', shirtName: '', avatar: '' });
     toast.success('Đã thêm 1 cầu thủ vào đội hình!');
   };
 
@@ -2094,6 +2096,67 @@ export default function AdminDashboard() {
                         onChange={(e) => setNewPlayer({ ...newPlayer, shirtName: e.target.value })}
                       />
                     </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Ảnh đại diện:</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {newPlayer.avatar ? (
+                          <div style={{ position: 'relative' }}>
+                            <img
+                              src={newPlayer.avatar}
+                              alt="avt"
+                              style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-green)' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setNewPlayer({ ...newPlayer, avatar: '' })}
+                              style={{
+                                position: 'absolute',
+                                top: '-4px',
+                                right: '-4px',
+                                background: 'var(--accent-red)',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '50%',
+                                width: '16px',
+                                height: '16px',
+                                fontSize: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                              title="Xóa ảnh"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : null}
+                        <label
+                          className="btn ghost small"
+                          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+                          title="Tải ảnh từ máy tính hoặc điện thoại"
+                        >
+                          <Camera size={14} />
+                          <span>{newPlayer.avatar ? 'Đổi ảnh' : 'Tải ảnh lên'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const dataUrl = await compressAvatarImage(file);
+                                setNewPlayer({ ...newPlayer, avatar: dataUrl });
+                                toast.success('Đã tải và tối ưu ảnh đại diện!');
+                              } catch (err) {
+                                toast.error(err.message || 'Lỗi khi tải ảnh!');
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
                   </div>
 
                   <button className="btn green" onClick={handleAddSinglePlayer}>
@@ -2123,11 +2186,11 @@ export default function AdminDashboard() {
                       <table className="dpl-table">
                         <thead>
                           <tr>
-                            <th style={{ width: '60px' }}>Ảnh</th>
+                            <th style={{ width: '60px', textAlign: 'center' }}>Ảnh</th>
                             <th style={{ width: '80px' }}>Số Áo</th>
                             <th>Họ và Tên Thật</th>
                             <th>Tên In Trên Áo</th>
-                            <th>Link Avatar URL</th>
+                            <th>Ảnh Đại Diện (Tải Lên / Link URL)</th>
                             <th style={{ textAlign: 'center', width: '50px' }}>Xóa</th>
                           </tr>
                         </thead>
@@ -2137,14 +2200,58 @@ export default function AdminDashboard() {
                           ) : (
                             editingPlayers.map((p, idx) => (
                               <tr key={idx}>
-                                <td>
-                                  {p.avatar ? (
-                                    <img src={p.avatar} alt="avt" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--accent-green)' }} />
-                                  ) : (
-                                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-                                      #{p.num}
-                                    </div>
-                                  )}
+                                <td style={{ textAlign: 'center' }}>
+                                  <div style={{ position: 'relative', width: '38px', height: '38px', margin: '0 auto' }}>
+                                    {p.avatar ? (
+                                      <img
+                                        src={p.avatar}
+                                        alt="avt"
+                                        style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-green)' }}
+                                      />
+                                    ) : (
+                                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--text-muted)', border: '1px dashed var(--border-card)' }}>
+                                        #{p.num}
+                                      </div>
+                                    )}
+                                    <label
+                                      title="Tải ảnh đại diện từ máy / điện thoại"
+                                      style={{
+                                        position: 'absolute',
+                                        right: '-4px',
+                                        bottom: '-4px',
+                                        background: 'var(--accent-green)',
+                                        color: '#000',
+                                        borderRadius: '50%',
+                                        width: '18px',
+                                        height: '18px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.5)'
+                                      }}
+                                    >
+                                      <Camera size={10} />
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          try {
+                                            const dataUrl = await compressAvatarImage(file);
+                                            const updated = [...editingPlayers];
+                                            updated[idx].avatar = dataUrl;
+                                            setEditingPlayers(updated);
+                                            toast.success(`Đã cập nhật ảnh cho #${p.num} ${p.name}!`);
+                                          } catch (err) {
+                                            toast.error(err.message || 'Lỗi khi tải ảnh!');
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
                                 </td>
                                 <td>
                                   <input
@@ -2186,18 +2293,64 @@ export default function AdminDashboard() {
                                   />
                                 </td>
                                 <td>
-                                  <input
-                                    type="text"
-                                    className="input-dark"
-                                    placeholder="https://..."
-                                    style={{ padding: '4px 8px', fontSize: '12px' }}
-                                    value={p.avatar || ''}
-                                    onChange={(e) => {
-                                      const updated = [...editingPlayers];
-                                      updated[idx].avatar = e.target.value;
-                                      setEditingPlayers(updated);
-                                    }}
-                                  />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <label
+                                      className="btn ghost tiny"
+                                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                                      title="Tải ảnh từ máy tính hoặc điện thoại"
+                                    >
+                                      <Upload size={12} />
+                                      <span>Tải ảnh</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          try {
+                                            const dataUrl = await compressAvatarImage(file);
+                                            const updated = [...editingPlayers];
+                                            updated[idx].avatar = dataUrl;
+                                            setEditingPlayers(updated);
+                                            toast.success(`Đã tải ảnh cho cầu thủ #${p.num}!`);
+                                          } catch (err) {
+                                            toast.error(err.message || 'Lỗi khi tải ảnh!');
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                    {p.avatar?.startsWith('data:') ? (
+                                      <span className="badge tiny" style={{ background: 'rgba(0, 255, 135, 0.15)', color: 'var(--accent-green)', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                                        <span>✓ Đã có ảnh</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = [...editingPlayers];
+                                            updated[idx].avatar = '';
+                                            setEditingPlayers(updated);
+                                          }}
+                                          style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', fontWeight: 'bold', padding: '0 2px' }}
+                                          title="Xóa ảnh này"
+                                        >
+                                          ✕
+                                        </button>
+                                      </span>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        className="input-dark"
+                                        placeholder="Hoặc dán link: https://..."
+                                        style={{ padding: '4px 8px', fontSize: '11px', flex: 1, minWidth: '120px' }}
+                                        value={p.avatar || ''}
+                                        onChange={(e) => {
+                                          const updated = [...editingPlayers];
+                                          updated[idx].avatar = e.target.value;
+                                          setEditingPlayers(updated);
+                                        }}
+                                      />
+                                    )}
+                                  </div>
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
                                   <button

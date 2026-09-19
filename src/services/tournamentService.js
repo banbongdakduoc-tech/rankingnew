@@ -496,3 +496,62 @@ export function formatDateTime(dateStr) {
     return dateStr;
   }
 }
+
+/**
+ * Nén và chuyển đổi file ảnh sang chuỗi Data URL (Base64 JPEG) kích thước chuẩn Avatar 180x180
+ * Tự động cắt vuông theo tâm (center crop) để ảnh không bị méo.
+ * @param {File} file File ảnh từ máy hoặc điện thoại
+ * @param {number} targetSize Kích thước vuông tối đa (mặc định 180px)
+ * @param {number} quality Chất lượng nén (0.82 cho dung lượng ~10-15KB siêu nhẹ)
+ * @returns {Promise<string>}
+ */
+export function compressAvatarImage(file, targetSize = 180, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) {
+      reject(new Error('Vui lòng chọn một file hình ảnh hợp lệ (JPG, PNG, WebP)!'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const width = img.width;
+        const height = img.height;
+
+        // Cắt vuông tâm
+        const minDim = Math.min(width, height);
+        const startX = (width - minDim) / 2;
+        const startY = (height - minDim) / 2;
+
+        const size = Math.min(minDim, targetSize);
+        canvas.width = size;
+        canvas.height = size;
+
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        ctx.drawImage(
+          img,
+          startX,
+          startY,
+          minDim,
+          minDim,
+          0,
+          0,
+          size,
+          size
+        );
+
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Không thể đọc định dạng ảnh này!'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Lỗi khi đọc file từ thiết bị!'));
+    reader.readAsDataURL(file);
+  });
+}
