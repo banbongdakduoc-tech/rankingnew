@@ -129,9 +129,6 @@ export default function PublicStandings() {
   return (
     <div className="app-container animate-fade-in">{seasonHistory.length>0&&<label className="form-label mb16">Hồ sơ mùa giải<select className="select-dark" value={seasonId} onChange={e=>{setSeasonId(e.target.value);setFavorite('');setViewingMatch(null);}}><option value="">Mùa hiện hành</option>{seasonHistory.map(s=><option key={s.id} value={s.id}>{s.name} · {new Date(s.at).toLocaleDateString('vi-VN')}</option>)}</select></label>}{seasonError&&<p className="text-red" role="alert">{seasonError}</p>}
       {publicTab==='thongke'&&<label className="form-label mb16">Phạm vi thống kê<select className="select-dark" value={statsPhase} onChange={e=>setStatsPhase(e.target.value)}><option value="all">Toàn giải</option><option value="group">Vòng bảng</option><option value="ko">Knockout</option></select></label>}
-      <div className="favorites-bar">
-        <select className="select-dark" aria-label="Đội yêu thích" style={{ maxWidth: 240 }} value={favorite} onChange={e => { setFavorite(e.target.value); localStorage.setItem('dpl-favorite-team', e.target.value); }}><option value="">Lịch của tất cả đội</option>{allTeamsList.map(t => <option key={t} value={t}>★ {t}</option>)}</select>
-      </div>
       {rankingInfo && <div className="modal-backdrop" onClick={() => setRankingInfo(null)}><div className="modal-card" onClick={e => e.stopPropagation()} style={{ padding: 24 }}><div className="modal-header"><h3 className="text-accent">Giải thích thứ hạng · {rankingInfo.groupName}</h3><button className="btn ghost" onClick={() => setRankingInfo(null)}>Đóng</button></div><p className="text-dim mb12">Điểm → bảng phụ H2H (Điểm, GD, GF) → GD toàn bảng → GF toàn bảng → tên. Hai lượt đối đầu đều được xét; nhóm con còn bằng nhau được xét lại theo điều lệ.</p><table className="dpl-table"><thead><tr><th>Đội</th><th>Điểm</th><th>Tiêu chí</th></tr></thead><tbody>{calculateGroupStandings(rankingInfo.teams, matches.filter(m => m.group === rankingInfo.groupName), { provisional }).map(t => <tr key={t.name}><td>{t.name}</td><td>{t.pts}</td><td>{t.tieBreak || 'Khác điểm'} · GD toàn bảng {t.gd} · GF {t.gf}</td></tr>)}</tbody></table></div></div>}
       {/* MODALS DISPLAY: NẾU ĐANG XEM TRẬN THÌ HIỆN MATCH DETAIL, KHI ĐÓNG TRẬN SẼ TRẢ VỀ HỒ SƠ CẦU THỦ */}
       {viewingMatch ? (
@@ -422,6 +419,11 @@ export default function PublicStandings() {
           {/* Controls & Filter bar */}
           <div className="card mb16">
             <div className="grid-auto" style={{ alignItems: 'flex-end' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" htmlFor="public-schedule-team">Lọc theo đội:</label>
+                <select id="public-schedule-team" className="select-dark" value={favorite} onChange={e => { setFavorite(e.target.value); localStorage.setItem('dpl-favorite-team', e.target.value); }}><option value="">Lịch của tất cả đội</option>{allTeamsList.map(t => <option key={t} value={t}>{t}</option>)}</select>
+              </div>
+
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Tìm kiếm theo tên đội:</label>
                 <div style={{ position: 'relative' }}>
