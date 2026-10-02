@@ -146,6 +146,7 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .navbar-brand {
@@ -155,6 +156,8 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
   user-select: none;
   text-decoration: none;
+  flex: 1 1 340px;
+  min-width: 0;
 }
 
 .brand-logo-wrap {
@@ -187,6 +190,7 @@ h1, h2, h3, h4, h5, h6 {
 .brand-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .brand-title {
@@ -196,6 +200,7 @@ h1, h2, h3, h4, h5, h6 {
   background: linear-gradient(135deg, #FFFFFF 0%, #E2E8F0 60%, var(--accent-green) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  overflow-wrap: anywhere;
 }
 
 .brand-subtitle {
@@ -204,7 +209,11 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
+
+.brand-subtitle > .badge,
+.brand-subtitle > .status-pill { flex-shrink: 0; white-space: nowrap; }
 
 /* Status Pill in Navbar */
 .status-pill {
@@ -298,7 +307,20 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
+
+.app-navbar .navbar-nav {
+  order: 3;
+  flex: 1 1 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.app-navbar .nav-link { min-height: 40px; text-align: left; }
+.app-navbar .nav-link svg { flex-shrink: 0; }
+.app-navbar .navbar-actions .btn { margin-right: 0; white-space: normal; }
+.app-navbar .user-profile-badge { max-width: 100%; min-width: 0; }
+.app-navbar .user-meta { min-width: 0; overflow-wrap: anywhere; }
 
 .user-profile-badge {
   display: flex;
@@ -1702,6 +1724,9 @@ h1, h2, h3, h4, h5, h6 {
     flex-direction: column;
     align-items: stretch;
   }
+  .navbar-brand { flex: 0 1 auto; }
+  .navbar-actions { width: 100%; }
+  .app-navbar .navbar-nav { flex: 0 1 auto; }
   .navbar-nav {
     justify-content: center;
   }
@@ -1825,8 +1850,8 @@ h1, h2, h3, h4, h5, h6 {
   background: rgba(239, 68, 68, 0.07) !important;
 }
 /* Demo QA improvements: keep Stadium colors, typography and existing cards. */
-.sync-status { max-width: 1400px; margin: 12px auto 0; padding: 10px 20px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; color:var(--text-secondary); font-size:12px; }
-.sync-dot { width:8px; height:8px; border-radius:50%; background:var(--accent-gold); }
+.sync-status { max-width: 1240px; margin: 8px auto 0; padding: 6px 16px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:var(--text-secondary); font-size:12px; }
+.sync-dot { width:8px; height:8px; flex-shrink:0; border-radius:50%; background:var(--accent-gold); }
 .sync-status.connected .sync-dot { background:var(--accent-green); }
 .sync-status.offline { border-left:3px solid var(--accent-gold); background:rgba(245,158,11,.06); }
 .sync-conflict { display:flex; gap:12px; justify-content:space-between; padding:8px 0; }
