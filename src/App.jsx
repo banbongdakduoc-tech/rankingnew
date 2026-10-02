@@ -1,17 +1,22 @@
+import TextPrompt from './components/TextPrompt';
+import AvatarCropper from './components/AvatarCropper';
+import useModalAccessibility from './hooks/useModalAccessibility';
 // src/App.jsx
-import { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
-import { db } from './services/firebase';
-import PublicStandings from './pages/PublicStandings';
-import RefereeDashboard from './pages/RefereeDashboard';
-import AdminDashboard from './pages/AdminDashboard';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { ref, onValue } from './services/dataService';
+import { db } from './services/dataService';
+const PublicStandings = lazy(() => import('./pages/PublicStandings'));
+const RefereeDashboard = lazy(() => import('./pages/RefereeDashboard'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 import Navbar from './components/Navbar';
+import SyncStatus from './components/SyncStatus';
+import { subscribeSync } from './services/dataService';
 import { ToastProvider } from './components/Toast';
 import { useToast } from './components/ToastContext';
 import {
   loginUser,
   getSavedSession,
-  clearSession
+  clearSession, verifySavedSession
 } from './services/authService';
 import { LogIn, Lock, User, Shield, FileText, ArrowLeft } from 'lucide-react';
 import './index.css';
@@ -197,19 +202,25 @@ function PortalLoginPage({ portalType = 'btc', onLoginSuccess, onNavigate }) {
 
 // App Main Content
 function MainApp() {
+  useModalAccessibility();
   const { currentPath, navigate } = usePathRoute();
-  const [currentUser, setCurrentUser] = useState(() => getSavedSession());
+  const [currentUser, setCurrentUser] = useState(null);
+  const [sync, setSync] = useState({ loading: true });
+  useEffect(() => subscribeSync(setSync), []);
+  useEffect(() => { let active = true; const check = () => verifySavedSession().then(user => { if (active) setCurrentUser(user); }); if (getSavedSession()) check(); window.addEventListener('dpl-session', check); return () => { active = false; window.removeEventListener('dpl-session', check); }; }, []);
 
   // Tournament Status & Config from Firebase
   const [tourStatus, setTourStatus] = useState('none');
   const [tourConfig, setTourConfig] = useState({ name: 'Dược Premier League 2026' });
 
   useEffect(() => {
-    onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
-    onValue(ref(db, 'tourConfig'), (snap) => {
+    const unsubscribe0 = onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
+    const unsubscribe1 = onValue(ref(db, 'tourConfig'), (snap) => {
       if (snap.exists()) setTourConfig(snap.val());
     });
-  }, []);
+
+    return () => { unsubscribe0(); unsubscribe1(); };
+}, []);
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
@@ -225,6 +236,8 @@ function MainApp() {
 
   return (
     <div className="app-layout">
+      <AvatarCropper />
+      <TextPrompt />
       {/* NAVBAR */}
       <Navbar
         currentPath={currentPath}
@@ -236,7 +249,9 @@ function MainApp() {
       />
 
       {/* MAIN VIEW BASED ON ROUTE PATH */}
+      <SyncStatus staff={isBtcRoute || isRefereeRoute} />
       <main style={{ flex: 1 }}>
+        {sync.loading ? <div className="app-container card">Đang tải dữ liệu giải đấu…</div> : sync.error && !sync.updatedAt ? <div className="app-container card text-gold">Không tải được dữ liệu: {sync.error}. Kiểm tra kết nối backend.</div> : <Suspense fallback={<div className="app-container card">Đang mở cổng…</div>}>
         {/* 1. CỔNG BAN TỔ CHỨC (/btc hoặc /admin) */}
         {isBtcRoute && (
           currentUser?.role === 'admin' ? (
@@ -267,10 +282,11 @@ function MainApp() {
         {!isBtcRoute && !isRefereeRoute && (
           <PublicStandings />
         )}
+        </Suspense>}
       </main>
 
       {/* FOOTER */}
-      <footer style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', padding: '24px 16px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
+      <footer className="app-footer" style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', padding: '24px 16px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>

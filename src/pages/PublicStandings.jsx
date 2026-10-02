@@ -1,7 +1,7 @@
 // src/pages/PublicStandings.jsx
 import { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
-import { db } from '../services/firebase';
+import { ref, onValue } from '../services/dataService';
+import { db, request } from '../services/dataService';
 import {
   Trophy,
   Calendar,
@@ -44,6 +44,9 @@ export default function PublicStandings() {
   const [suspensions, setSuspensions] = useState({});
 
   // Active view tab in Public Hub
+  const [provisional, setProvisional] = useState(false);
+  const [favorite, setFavorite] = useState(() => localStorage.getItem('dpl-favorite-team') || '');
+  const [rankingInfo, setRankingInfo] = useState(null);
   const [publicTab, setPublicTab] = useState('bxh'); // 'bxh', 'lichthidau', 'knockout', 'thongke', 'doihinh'
   const [scheduleSubTab, setScheduleSubTab] = useState('upcoming'); // 'upcoming', 'completed'
   const [selectedGroupFilter, setSelectedGroupFilter] = useState('');
@@ -56,24 +59,22 @@ export default function PublicStandings() {
   const [viewingMatch, setViewingMatch] = useState(null);
   const [viewingPlayerStats, setViewingPlayerStats] = useState(null);
 
-  useEffect(() => {
-    onValue(ref(db, 'tourConfig'), (snap) => {
-      if (snap.exists()) setTourConfig(snap.val());
-    });
-    onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
-    onValue(ref(db, 'groupsData'), (snap) => setGroupsData(snap.val() || []));
-    onValue(ref(db, 'matches'), (snap) => {
-      const data = snap.val();
-      setMatches(data ? Object.keys(data).map((k) => ({ id: k, ...data[k] })) : []);
-    });
-    onValue(ref(db, 'players'), (snap) => setPlayers(snap.val() || {}));
-    onValue(ref(db, 'suspensions'), (snap) => setSuspensions(snap.val() || {}));
-  }, []);
+  const [seasonId,setSeasonId]=useState('');
+  const [seasonHistory,setSeasonHistory]=useState([]);
+  const [seasonError,setSeasonError]=useState('');
+  const [statsPhase,setStatsPhase]=useState('all');
+  useEffect(()=>{
+    let active=true;
+    const apply=data=>{if(!active)return;setTourConfig(data.tourConfig);setTourStatus(data.tourStatus);setGroupsData(data.groupsData||[]);const list=Object.values(data.matches||{});setMatches(list);setPlayers(data.players||{});setSuspensions(data.suspensions||{});const requested=new URLSearchParams(window.location.search).get('match');if(requested)setViewingMatch(list.find(m=>m.id===requested)||null);};
+    const stop=onValue(ref(db),snap=>{const data=snap.val();if(!data)return;setSeasonHistory(data.seasonHistory||[]);if(!seasonId)apply(data);});
+    if(seasonId)request(`/api/seasons/${encodeURIComponent(seasonId)}`).then(res=>{apply(res.data);setSeasonError('');}).catch(e=>{if(active)setSeasonError(e.message);});
+    return()=>{active=false;stop();};
+  },[seasonId]);
 
   // Not started state
   if (tourStatus === 'none' || tourStatus === 'config' || tourStatus === 'setup_teams') {
     return (
-      <div className="app-container">
+      <div className="app-container">{seasonHistory.length>0&&<label className="form-label mb16">Hồ sơ mùa giải<select className="select-dark" value={seasonId} onChange={e=>{setSeasonId(e.target.value);setFavorite('');setViewingMatch(null);}}><option value="">Mùa hiện hành</option>{seasonHistory.map(s=><option key={s.id} value={s.id}>{s.name} · {new Date(s.at).toLocaleDateString('vi-VN')}</option>)}</select></label>}{seasonError&&<p className="text-red" role="alert">{seasonError}</p>}
         <div className="card text-center" style={{ padding: '60px 20px', maxWidth: '600px', margin: '40px auto' }}>
           <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(0,255,135,0.1)', border: '1px solid rgba(0,255,135,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Trophy size={32} className="text-accent" />
@@ -96,19 +97,22 @@ export default function PublicStandings() {
   // Lọc lịch thi đấu
   const upcomingMatches = matches
     .filter((m) => m.status === 'Sắp diễn ra')
+    .filter(m => !favorite || m.home === favorite || m.away === favorite)
     .filter((m) => (!selectedGroupFilter || m.group === selectedGroupFilter))
     .filter((m) => (!searchMatchTxt || m.home?.toLowerCase().includes(searchMatchTxt.toLowerCase()) || m.away?.toLowerCase().includes(searchMatchTxt.toLowerCase())))
     .sort((a, b) => new Date(a.date || '9999-12-31') - new Date(b.date || '9999-12-31'));
 
   const completedMatches = matches
-    .filter((m) => m.status === 'Đã xong')
+    .filter((m) => ['Đã xong', 'Chờ duyệt', 'Bị từ chối'].includes(m.status))
+    .filter(m => !favorite || m.home === favorite || m.away === favorite)
     .filter((m) => (!selectedGroupFilter || m.group === selectedGroupFilter))
     .filter((m) => (!searchMatchTxt || m.home?.toLowerCase().includes(searchMatchTxt.toLowerCase()) || m.away?.toLowerCase().includes(searchMatchTxt.toLowerCase())))
     .sort((a, b) => new Date(b.date || '1970-01-01') - new Date(a.date || '1970-01-01'));
 
   // Thống kê cá nhân
-  const topScorers = getTopScorers(matches, players);
-  const topCards = getDisciplineStats(matches);
+  const phaseMatches=matches.filter(m=>statsPhase==='all'||(statsPhase==='ko')===(m.group==='Vòng Knock-out'));
+  const topScorers = getTopScorers(phaseMatches, players, { provisional });
+  const topCards = getDisciplineStats(phaseMatches, { provisional });
 
   // Danh sách các đội
   const allTeamsList = groupsData.flatMap((g) => g.teams || []);
@@ -123,19 +127,26 @@ export default function PublicStandings() {
   const completedGroupMatches = matches.filter((m) => m.group !== 'Vòng Knock-out' && m.status === 'Đã xong').length;
 
   return (
-    <div className="app-container animate-fade-in">
+    <div className="app-container animate-fade-in">{seasonHistory.length>0&&<label className="form-label mb16">Hồ sơ mùa giải<select className="select-dark" value={seasonId} onChange={e=>{setSeasonId(e.target.value);setFavorite('');setViewingMatch(null);}}><option value="">Mùa hiện hành</option>{seasonHistory.map(s=><option key={s.id} value={s.id}>{s.name} · {new Date(s.at).toLocaleDateString('vi-VN')}</option>)}</select></label>}{seasonError&&<p className="text-red" role="alert">{seasonError}</p>}
+      {publicTab==='thongke'&&<label className="form-label mb16">Phạm vi thống kê<select className="select-dark" value={statsPhase} onChange={e=>setStatsPhase(e.target.value)}><option value="all">Toàn giải</option><option value="group">Vòng bảng</option><option value="ko">Knockout</option></select></label>}
+      <div className="favorites-bar">
+        <label className="form-label"><input type="checkbox" checked={provisional} onChange={e => setProvisional(e.target.checked)}/> BXH & thống kê tạm tính (LIVE / chờ duyệt)</label>
+        <select className="select-dark" aria-label="Đội yêu thích" style={{ maxWidth: 240 }} value={favorite} onChange={e => { setFavorite(e.target.value); localStorage.setItem('dpl-favorite-team', e.target.value); }}><option value="">Lịch của tất cả đội</option>{allTeamsList.map(t => <option key={t} value={t}>★ {t}</option>)}</select>
+        <span className="badge badge-ghost">{provisional ? 'TẠM TÍNH · chưa chốt' : 'BXH CHÍNH THỨC · trận đã duyệt'}</span>
+      </div>
+      {rankingInfo && <div className="modal-backdrop" onClick={() => setRankingInfo(null)}><div className="modal-card" onClick={e => e.stopPropagation()} style={{ padding: 24 }}><div className="modal-header"><h3 className="text-accent">Giải thích thứ hạng · {rankingInfo.groupName}</h3><button className="btn ghost" onClick={() => setRankingInfo(null)}>Đóng</button></div><p className="text-dim mb12">Điểm → bảng phụ H2H (Điểm, GD, GF) → GD toàn bảng → GF toàn bảng → tên. Hai lượt đối đầu đều được xét; nhóm con còn bằng nhau được xét lại theo điều lệ.</p><table className="dpl-table"><thead><tr><th>Đội</th><th>Điểm</th><th>Tiêu chí</th></tr></thead><tbody>{calculateGroupStandings(rankingInfo.teams, matches.filter(m => m.group === rankingInfo.groupName), { provisional }).map(t => <tr key={t.name}><td>{t.name}</td><td>{t.pts}</td><td>{t.tieBreak || 'Khác điểm'} · GD toàn bảng {t.gd} · GF {t.gf}</td></tr>)}</tbody></table></div></div>}
       {/* MODALS DISPLAY: NẾU ĐANG XEM TRẬN THÌ HIỆN MATCH DETAIL, KHI ĐÓNG TRẬN SẼ TRẢ VỀ HỒ SƠ CẦU THỦ */}
       {viewingMatch ? (
         <MatchDetailModal
-          match={viewingMatch}
+          match={matches.find(m => m.id === viewingMatch.id) || viewingMatch}
           isPublicView={true}
           backLabel={viewingPlayerStats ? 'Quay lại hồ sơ cầu thủ' : 'Đóng'}
-          onClose={() => setViewingMatch(null)}
+          onClose={() => { setViewingMatch(null); const url = new URL(window.location.href); url.searchParams.delete('match'); window.history.replaceState({}, '', url); }}
         />
       ) : viewingPlayerStats ? (
         <PlayerStatsDetailModal
           playerInfo={viewingPlayerStats}
-          matches={matches}
+          matches={matches.filter(m => m.status === 'Đã xong' || provisional && ['Đang LIVE', 'Chờ duyệt'].includes(m.status))}
           suspensions={suspensions}
           onClose={() => setViewingPlayerStats(null)}
           onSelectMatch={(m) => setViewingMatch(m)}
@@ -295,16 +306,16 @@ export default function PublicStandings() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {groupsData.map((g, idx) => {
                 const groupMatches = matches.filter(
-                  (m) => m.group === g.groupName && (m.status === 'Đã xong' || m.status === 'Đang LIVE')
+                  (m) => m.group === g.groupName && ['Đã xong', 'Đang LIVE', 'Chờ duyệt'].includes(m.status)
                 );
-                const standings = calculateGroupStandings(g.teams || [], groupMatches);
+                const standings = calculateGroupStandings(g.teams || [], groupMatches, { provisional, reapplyH2H: tourConfig.reapplyH2H });
 
                 return (
                   <div key={idx} className="card">
                     <div className="card-header">
                       <div className="card-title">
                         <span className="badge badge-accent-glow">{g.groupName}</span>
-                        <span>Bảng Xếp Hạng Chi Tiết</span>
+                        <span>Bảng Xếp Hạng Chi Tiết</span><button className="btn ghost tiny" onClick={() => setRankingInfo(g)}>Giải thích H2H</button>
                       </div>
                       <span className="text-dim" style={{ fontSize: '12px' }}>
                         {groupStageFinished
@@ -458,7 +469,7 @@ export default function PublicStandings() {
                   onClick={() => setScheduleSubTab('completed')}
                   style={{ flex: 1 }}
                 >
-                  <CheckCircle2 size={14} /> Đã Xong ({completedMatches.length})
+                  <CheckCircle2 size={14} /> Kết Quả / Biên Bản ({completedMatches.length})
                 </button>
               </div>
             </div>
@@ -493,7 +504,7 @@ export default function PublicStandings() {
                       {upcomingMatches.map((m) => (
                         <tr key={m.id}>
                           <td>
-                            <span className="badge badge-ghost">{m.round || m.group}</span>
+                            <span className="badge badge-ghost">{m.round || m.group}</span>{['Chờ duyệt','Bị từ chối'].includes(m.status) && <span className="badge badge-pending">{m.status === 'Chờ duyệt' ? 'Kết thúc · Chờ duyệt' : 'Đang sửa biên bản'}</span>}
                           </td>
                           <td>
                             <span style={{ fontWeight: '700', fontSize: '14.5px' }}>
@@ -549,7 +560,7 @@ export default function PublicStandings() {
                       {completedMatches.map((m) => (
                         <tr key={m.id}>
                           <td>
-                            <span className="badge badge-ghost">{m.round || m.group}</span>
+                            <span className="badge badge-ghost">{m.round || m.group}</span>{['Chờ duyệt','Bị từ chối'].includes(m.status) && <span className="badge badge-pending">{m.status === 'Chờ duyệt' ? 'Kết thúc · Chờ duyệt' : 'Đang sửa biên bản'}</span>}
                           </td>
                           <td>
                             <span style={{ fontWeight: '700' }}>

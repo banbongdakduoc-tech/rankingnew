@@ -29,18 +29,18 @@ export default function PlayerStatsDetailModal({
   const matchHistory = [];
 
   matches.forEach((m) => {
-    if (m.status !== 'Đã xong' && m.status !== 'Đang LIVE') return;
+    if (!['Đã xong', 'Đang LIVE', 'Chờ duyệt'].includes(m.status)) return;
 
     const playerEvents = (m.events || []).filter((e) => {
-      const matchPlayer = e.player === rawPlayerName || cleanPlayerName(e.player) === cleanName;
+      const matchPlayer = data.playerId ? e.playerId === data.playerId : e.player === rawPlayerName || cleanPlayerName(e.player) === cleanName;
       const matchTeam = e.team === teamName;
-      return matchPlayer && matchTeam;
+      return !e.cancelled && matchPlayer && matchTeam;
     });
 
     if (playerEvents.length === 0) return;
 
     if (type === 'goals') {
-      const goalEvents = playerEvents.filter((e) => e.type === 'goal' && e.detail !== 'own');
+      const goalEvents = playerEvents.filter((e) => e.type === 'goal' && ['normal','pen','penalty'].includes(e.detail || 'normal') && e.phase !== 'shootout');
       if (goalEvents.length > 0) {
         matchHistory.push({
           match: m,
@@ -54,16 +54,16 @@ export default function PlayerStatsDetailModal({
         matchHistory.push({
           match: m,
           events: cardEvents,
-          yellowCount: cardEvents.filter((e) => e.detail === 'Vàng' || e.detail === 'yellow').length,
-          redCount: cardEvents.filter((e) => e.detail === 'Đỏ' || e.detail === 'red').length
+          yellowCount: cardEvents.filter((e) => e.detail === 'Vàng' || e.detail === 'yellow' || e.detail === 'second_yellow_red').length,
+          redCount: cardEvents.filter((e) => e.detail === 'Đỏ' || e.detail === 'red' || e.detail === 'direct_red' || e.detail === 'second_yellow_red').length
         });
       }
     }
   });
 
   // Kiểm tra tình trạng treo giò
-  const pKey = `${teamName}@@${rawPlayerName}`;
-  const activeSuspension = suspensions[pKey];
+  const pKey = `${teamName}@@${data.playerId || rawPlayerName}`;
+  const activeSuspension = suspensions[pKey]?.remainingMatches !== 0 ? suspensions[pKey] : null;
 
   return (
     <div className="modal-backdrop animate-fade-in" onClick={onClose}>

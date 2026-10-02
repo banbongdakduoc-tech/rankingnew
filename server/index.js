@@ -1,79 +1,16 @@
-import express from 'express';
-import http from 'http';
+import 'dotenv/config';
+import http from 'node:http';
 import { Server } from 'socket.io';
-import cors from 'cors';
-import dotenv from 'dotenv';
-
 import { db } from './config/db.js';
-import authRoutes from './routes/auth.js';
-import tournamentRoutes from './routes/tournament.js';
-import matchesRoutes from './routes/matches.js';
-import playersRoutes from './routes/players.js';
-import disciplineRoutes from './routes/discipline.js';
-import backupRoutes from './routes/backup.js';
-
-dotenv.config();
-
-const app = express();
-const server = http.createServer(app);
-
-const PORT = process.env.PORT || 5000;
-const CLIENT_URL = process.env.CLIENT_URL || '*';
-
-// Socket.IO Setup
-const io = new Server(server, {
-  cors: {
-    origin: CLIENT_URL === '*' ? '*' : [CLIENT_URL, 'http://localhost:5173', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-  }
-});
-
-app.set('io', io);
-
-// Middleware
-app.use(cors({
-  origin: CLIENT_URL === '*' ? '*' : [CLIENT_URL, 'http://localhost:5173', 'http://localhost:3000'],
-  credentials: true
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Health Check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    app: 'Dược Premier League Backend API',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Mount Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/tournament', tournamentRoutes);
-app.use('/api/matches', matchesRoutes);
-app.use('/api/players', playersRoutes);
-app.use('/api/discipline', disciplineRoutes);
-app.use('/api/backup', backupRoutes);
-
-// Socket.IO Realtime Connection
-io.on('connection', (socket) => {
-  console.log(`🔌 [Socket.IO] Client kết nối: ${socket.id}`);
-
-  // Gửi toàn bộ dữ liệu ban đầu cho client mới kết nối
-  socket.emit('initial_data', db.getAll());
-
-  socket.on('disconnect', () => {
-    console.log(`🔌 [Socket.IO] Client ngắt kết nối: ${socket.id}`);
-  });
-});
-
-// Start Server
-server.listen(PORT, () => {
-  console.log(`====================================================`);
-  console.log(`🚀 Dược Premier League Backend Server đang chạy`);
-  console.log(`📡 Cổng: http://localhost:${PORT}`);
-  console.log(`🛡️  Bảo mật: JWT Auth + An Toàn Dữ Liệu`);
-  console.log(`====================================================`);
-});
+import { createApp } from './app.js';
+import { authenticate } from './middleware/auth.js';
+import { publicState, staffState } from './services/stateEngine.js';
+await db.init();
+let io;
+function broadcast(state){for(const socket of io?.sockets.sockets.values() || []){try{const user=socket.handshake.auth?.token?authenticate(socket.handshake.auth.token,db):null;socket.emit('db_changed',user?staffState(state,user):publicState(state));}catch{socket.emit('session_expired');socket.disconnect(true);}}}
+db.subscribe(broadcast);
+const app=createApp(db,{broadcast}),server=http.createServer(app);
+io=new Server(server,{cors:{origin:(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(s=>s.trim()),methods:['GET','POST']},maxHttpBufferSize:15e6});
+io.use((socket,next)=>{try{if(socket.handshake.auth?.token)authenticate(socket.handshake.auth.token,db);next();}catch{next(new Error('Phiên hết hạn.'));}});
+io.on('connection',socket=>{const user=socket.handshake.auth?.token?authenticate(socket.handshake.auth.token,db):null;socket.emit('initial_data',user?staffState(db.getAll(),user):publicState(db.getAll()));});
+const port=Number(process.env.PORT || 5000);server.listen(port,()=>console.log(`DPL API sẵn sàng ở cổng ${port}; nguồn dữ liệu: ${process.env.DB_MODE || 'firebase'}`));

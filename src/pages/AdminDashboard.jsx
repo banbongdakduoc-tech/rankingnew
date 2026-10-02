@@ -1,7 +1,11 @@
+import { askText } from '../services/promptService';
+import { chooseAvatarImage } from '../services/avatarService';
 // src/pages/AdminDashboard.jsx
 import { useState, useEffect } from 'react';
-import { ref, set, update, onValue, remove } from 'firebase/database';
-import { db } from '../services/firebase';
+import { ref, set, update, onValue } from '../services/dataService';
+import { db, reopenMatch, resetTournament, sendCommand } from '../services/dataService';
+import AdminTools from '../components/AdminTools';
+import ShootoutPanel from '../components/ShootoutPanel';
 import {
   Trophy,
   Users,
@@ -39,7 +43,7 @@ import {
   getQualifyingCount,
   calculateEventsGoals,
   generateKnockoutPairs,
-  compressAvatarImage
+  parseMatchMinute, compareEvents, resolveWinner, validatePlayers, normalizeKickoff, kickoffInput
 } from '../services/tournamentService';
 import KnockoutBracket from '../components/KnockoutBracket';
 import MatchPrintReport from '../components/MatchPrintReport';
@@ -107,11 +111,12 @@ export default function AdminDashboard() {
 
   // Subscribe to Firebase on mount
   useEffect(() => {
-    onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
-    onValue(ref(db, 'tourConfig'), (snap) => {
+    const unsubscribe0 = onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
+    const unsubscribe1 = onValue(ref(db, 'tourConfig'), (snap) => {
       if (snap.exists()) {
         const val = snap.val();
         setTourConfig({
+          ...val,
           name: val.name || 'Dược Premier League 2026',
           format: val.format || 'group',
           numGroups: val.numGroups || 2,
@@ -120,21 +125,23 @@ export default function AdminDashboard() {
         });
       }
     });
-    onValue(ref(db, 'groupsData'), (snap) => setGroupsData(snap.val() || []));
-    onValue(ref(db, 'matches'), (snap) => {
+    const unsubscribe2 = onValue(ref(db, 'groupsData'), (snap) => setGroupsData(snap.val() || []));
+    const unsubscribe3 = onValue(ref(db, 'matches'), (snap) => {
       const data = snap.val();
       setMatches(data ? Object.keys(data).map((k) => ({ id: k, ...data[k] })) : []);
     });
-    onValue(ref(db, 'players'), (snap) => {
+    const unsubscribe4 = onValue(ref(db, 'players'), (snap) => {
       const pData = snap.val() || {};
       setPlayers(pData);
       if (editTeam) {
         setEditingPlayers(pData[editTeam] || []);
       }
     });
-    onValue(ref(db, 'suspensions'), (snap) => setSuspensions(snap.val() || {}));
-    onValue(ref(db, 'handledViolations'), (snap) => setHandledViolations(snap.val() || {}));
-  }, [editTeam]);
+    const unsubscribe5 = onValue(ref(db, 'suspensions'), (snap) => setSuspensions(snap.val() || {}));
+    const unsubscribe6 = onValue(ref(db, 'handledViolations'), (snap) => setHandledViolations(snap.val() || {}));
+
+    return () => { unsubscribe0(); unsubscribe1(); unsubscribe2(); unsubscribe3(); unsubscribe4(); unsubscribe5(); unsubscribe6(); };
+}, [editTeam]);
 
   // ==========================================
   // 2. STATE CỤC BỘ (FORMS)
@@ -167,36 +174,55 @@ export default function AdminDashboard() {
   // ==========================================
   // 3. THUẬT TOÁN KỶ LUẬT
   // ==========================================
-  const violations = detectViolations(matches, handledViolations);
+  const violations = detectViolations(matches, handledViolations, tourConfig);
 
-  const handleBanPlayer = (v) => {
+  const handleBanPlayer = async (v) => {
+    try {
+
     if (window.confirm(`Xác nhận TREO GIÒ cầu thủ ${v.player} (${v.team})? Cầu thủ này sẽ bị khóa ở trận tiếp theo.`)) {
       const updates = {};
-      updates[`handledViolations/${v.key}`] = true;
-      updates[`suspensions/${v.pKey}`] = { reason: v.reason, matchId: v.key, createdAt: new Date().toISOString() };
-      update(ref(db, '/'), updates);
+      updates[`handledViolations/${v.key}`] = {reason:v.reason,at:new Date().toISOString()};
+      const duration = Number(await askText('Số trận cấm thi đấu:', v.matches || 1));
+      if (!Number.isInteger(duration) || duration < 1 || duration > 20) throw new Error('Số trận cấm phải từ 1 đến 20.');
+      const previous=suspensions[v.pKey];const total=duration+Number(previous?.remainingMatches || 0);if(total>20)throw new Error('Tổng án tối đa 20 trận.');
+      updates[`suspensions/${v.pKey}`] = { history:[...(previous?.history || []),...(previous?[{...previous,history:undefined}]:[])], reason: v.reason, playerId: v.playerId, player: v.player, team: v.team, matchId: v.matchId, violationKey: v.key, remainingMatches: total, totalMatches: total, servedMatchIds: [], createdAt: new Date().toISOString() };
+      await update(ref(db, '/'), updates);
       toast.success(`Đã áp dụng án phạt treo giò với ${v.player}`);
     }
-  };
 
-  const handlePardonWarning = (v) => {
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handlePardonWarning = async (v) => {
+    try {
+
     if (window.confirm(`Ân xá (Bỏ qua cảnh báo lỗi này) cho ${v.player}? Hệ thống sẽ không nhắc lại.`)) {
-      update(ref(db, `handledViolations/${v.key}`), true);
+      const reason=await askText('Lý do ân xá cảnh báo:');if(!reason?.trim())return;
+      await set(ref(db, `handledViolations/${v.key}`), {reason,at:new Date().toISOString(),action:'pardon'});
       toast.info(`Đã ân xá cảnh báo của ${v.player}`);
     }
-  };
 
-  const handleRemoveActiveBan = (pKey, playerName) => {
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handleRemoveActiveBan = async (pKey, playerName) => {
+    try {
+
     if (window.confirm(`Xác nhận GỠ ÁN PHẠT TREO GIÒ cho ${playerName}? Cầu thủ sẽ được phép ra sân trở lại.`)) {
-      remove(ref(db, `suspensions/${pKey}`));
+      const reason=await askText('Lý do gỡ án / kết quả kháng nghị:');if(!reason?.trim())return;
+      await update(ref(db, `suspensions/${pKey}`), {remainingMatches:0,pardonReason:reason,pardonedAt:new Date().toISOString()});
       toast.success(`Đã gỡ án phạt treo giò cho ${playerName}`);
     }
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // ==========================================
   // 4. QUẢN LÝ VÒNG ĐỜI GIẢI ĐẤU
   // ==========================================
-  const handleGoToSetupTeams = () => {
+  const handleGoToSetupTeams = async () => {
+    try {
+
     if (!tourConfig.name?.trim()) {
       toast.warning('Vui lòng nhập Tên Giải Đấu!');
       return;
@@ -216,17 +242,21 @@ export default function AdminDashboard() {
       }
     }
 
-    set(ref(db, 'tourConfig'), tourConfig);
-    set(ref(db, 'groupsData'), initialGroups);
-    set(ref(db, 'tourStatus'), 'setup_teams');
+    await set(ref(db, 'tourConfig'), tourConfig);
+    await set(ref(db, 'groupsData'), initialGroups);
+    await set(ref(db, 'tourStatus'), 'setup_teams');
     toast.success('Đã khởi tạo cấu hình giải đấu!');
-  };
 
-  const handleAddTeamToGroup = (gIndex) => {
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handleAddTeamToGroup = async (gIndex) => {
+    try {
+
     const tName = teamInputs[gIndex]?.trim();
     if (!tName) return;
 
-    const newGroups = [...groupsData];
+    const newGroups = structuredClone(groupsData);
     if (!newGroups[gIndex].teams) newGroups[gIndex].teams = [];
 
     // Kiểm tra trùng tên
@@ -236,57 +266,67 @@ export default function AdminDashboard() {
     }
 
     newGroups[gIndex].teams.push(tName);
-    set(ref(db, 'groupsData'), newGroups);
+    await set(ref(db, 'groupsData'), newGroups);
     setTeamInputs({ ...teamInputs, [gIndex]: '' });
     toast.success(`Đã thêm đội ${tName}`);
-  };
 
-  const handleRemoveTeam = (gIndex, tName) => {
-    const newGroups = [...groupsData];
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handleRemoveTeam = async (gIndex, tName) => {
+    try {
+
+    const newGroups = structuredClone(groupsData);
     newGroups[gIndex].teams = (newGroups[gIndex].teams || []).filter((t) => t !== tName);
-    set(ref(db, 'groupsData'), newGroups);
+    await set(ref(db, 'groupsData'), newGroups);
     toast.info(`Đã xóa đội ${tName}`);
-  };
 
-  const generateSchedule = () => {
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const generateSchedule = async () => {
+    try {
+
     const isValid = groupsData.every((g) => (g.teams || []).length >= 2);
     if (!isValid) {
       toast.warning('Mỗi bảng đấu phải có ít nhất 2 đội để sinh lịch!');
       return;
     }
 
+    if (matches.some(m => m.status !== 'Sắp diễn ra')) throw new Error('Không sinh lại lịch đã có trận tác nghiệp.');
+    if (matches.length && !window.confirm('Sinh lại lịch nháp? Server sẽ lưu backup trước khi thay.')) return;
     const matchesObj = generateRoundRobinMatches(groupsData);
-    set(ref(db, 'matches'), matchesObj);
-    set(ref(db, 'tourStatus'), 'draft');
+    await set(ref(db, 'matches'), matchesObj);
+    await set(ref(db, 'tourStatus'), 'draft');
     toast.success('🎉 Đã tự động sinh lịch thi đấu Vòng Bảng!');
-  };
 
-  const handlePublishTournament = () => {
-    set(ref(db, 'tourStatus'), 'active');
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handlePublishTournament = async () => {
+    try {
+
+    await set(ref(db, 'tourStatus'), 'active');
     toast.success('🎉 GIẢI ĐẤU ĐÃ CHÍNH THỨC KHỞI TRANH!');
-  };
 
-  const handleCompleteTour = () => {
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handleCompleteTour = async () => {
+    try {
+
     if (window.confirm('Xác nhận KHÉP LẠI giải đấu? Khán giả vẫn xem được BXH nhưng Thư ký sẽ không thể sửa đổi nữa.')) {
-      set(ref(db, 'tourStatus'), 'completed');
+      await set(ref(db, 'tourStatus'), 'completed');
       toast.success('Giải đấu đã chuyển sang trạng thái Hoàn Thành!');
     }
-  };
 
-  const handleDeleteTour = () => {
-    if (window.confirm('⚠️ CẢNH BÁO ĐỎ: Hành động này sẽ XÓA SẠCH toàn bộ dữ liệu giải đấu (Lịch, BXH, Trận đấu). Các tài khoản đăng nhập vẫn được giữ an toàn. Bạn có chắc chắn?')) {
-      const resetData = {
-        tourStatus: null,
-        tourConfig: null,
-        groupsData: null,
-        matches: null,
-        players: null,
-        suspensions: null,
-        handledViolations: null
-      };
-      update(ref(db, '/'), resetData);
-      toast.info('Đã reset toàn bộ giải đấu về mặc định');
-    }
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handleDeleteTour = async () => {
+    const confirmation = await askText(`Reset sẽ lưu backup của mùa hiện tại và giữ tài khoản. Nhập đúng tên giải để xác nhận: ${tourConfig.name}`);
+    if (confirmation === null) return;
+    try { await resetTournament(confirmation); toast.success('Đã sao lưu mùa hiện tại và reset dữ liệu giải.'); } catch(e) { toast.error(e.message); }
   };
 
   // ==========================================
@@ -304,12 +344,14 @@ export default function AdminDashboard() {
   const thirdDone = thirdMatches.length > 0 && thirdMatches.every((m) => m.status === 'Đã xong' && m.advancingTeam);
 
   // Khởi tạo vòng Knock-out đầu tiên (Chỉ tạo 1 lần duy nhất)
-  const handleStartKoWizard = (format) => {
+  const handleStartKoWizard = async (format) => {
+    try {
+
     setKoFormatSelection(format);
     const roundTitle = format === 'quarter' ? 'Tứ Kết' : 'Bán Kết';
     setKoRoundName(roundTitle);
 
-    update(ref(db, 'tourConfig'), { knockoutFormat: format });
+    await update(ref(db, 'tourConfig'), { knockoutFormat: format });
 
     const suggestedPairs = generateKnockoutPairs(groupsData, matches, format);
     const initialMatches = suggestedPairs.map((p) => ({
@@ -321,7 +363,9 @@ export default function AdminDashboard() {
 
     setKoMatchesForm(initialMatches);
     setKoStep(2);
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   const handleAutoFillFromStandings = () => {
     const suggestedPairs = generateKnockoutPairs(groupsData, matches, koFormatSelection);
@@ -335,7 +379,9 @@ export default function AdminDashboard() {
     toast.success('⚡ Đã tự động điền các cặp đấu từ kết quả Bảng Xếp Hạng!');
   };
 
-  const handleCreateKnockoutMatches = () => {
+  const handleCreateKnockoutMatches = async () => {
+    try {
+
     let isValid = true;
     let updates = {};
 
@@ -345,6 +391,8 @@ export default function AdminDashboard() {
       updates[`matches/${matchId}`] = {
         id: matchId,
         group: 'Vòng Knock-out',
+        sourceHome: { groupName: groupsData.find(g => g.teams.includes(m.home))?.groupName, rank: calculateGroupStandings(groupsData.find(g => g.teams.includes(m.home))?.teams || [], matches.filter(x => x.group === groupsData.find(g => g.teams.includes(m.home))?.groupName)).findIndex(t => t.name === m.home) },
+        sourceAway: { groupName: groupsData.find(g => g.teams.includes(m.away))?.groupName, rank: calculateGroupStandings(groupsData.find(g => g.teams.includes(m.away))?.teams || [], matches.filter(x => x.group === groupsData.find(g => g.teams.includes(m.away))?.groupName)).findIndex(t => t.name === m.away) },
         round: `${koRoundName} ${koMatchesForm.length > 1 ? idx + 1 : ''}`.trim(),
         home: m.home,
         away: m.away,
@@ -366,13 +414,17 @@ export default function AdminDashboard() {
       return;
     }
 
-    update(ref(db, '/'), updates);
+    await update(ref(db, '/'), updates);
     toast.success(`🎉 Đã tạo vòng ${koRoundName} thành công!`);
     setKoStep(1);
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // Tạo 2 trận Bán Kết sau khi xong 4 trận Tứ Kết
-  const handleCreateSemiFinals = () => {
+  const handleCreateSemiFinals = async () => {
+    try {
+
     if (qfDoneCount < 4) {
       toast.warning('Cần hoàn thành và duyệt đủ 4 trận Tứ Kết trước khi tạo Bán Kết!');
       return;
@@ -396,6 +448,7 @@ export default function AdminDashboard() {
       id: bk1Id,
       group: 'Vòng Knock-out',
       round: 'Bán Kết 1',
+      sourceHome: { matchId: qfMatches[0].id, outcome: 'winner' }, sourceAway: { matchId: qfMatches[1].id, outcome: 'winner' },
       home: w1,
       away: w2,
       date: '',
@@ -414,6 +467,7 @@ export default function AdminDashboard() {
       id: bk2Id,
       group: 'Vòng Knock-out',
       round: 'Bán Kết 2',
+      sourceHome: { matchId: qfMatches[2].id, outcome: 'winner' }, sourceAway: { matchId: qfMatches[3].id, outcome: 'winner' },
       home: w3,
       away: w4,
       date: '',
@@ -428,12 +482,16 @@ export default function AdminDashboard() {
       advancingTeam: ''
     };
 
-    update(ref(db, '/'), updates);
+    await update(ref(db, '/'), updates);
     toast.success('🎉 ĐÃ TẠO 2 TRẬN BÁN KẾT THÀNH CÔNG!');
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // Tạo 2 trận Chung Kết & Tranh Hạng 3 sau khi xong 2 trận Bán Kết
-  const handleCreateFinalsAndThirdPlace = () => {
+  const handleCreateFinalsAndThirdPlace = async () => {
+    try {
+
     if (sfDoneCount < 2) {
       toast.warning('Cần hoàn thành và duyệt đủ 2 trận Bán Kết trước khi tạo Chung Kết!');
       return;
@@ -461,6 +519,7 @@ export default function AdminDashboard() {
       id: finalId,
       group: 'Vòng Knock-out',
       round: 'Chung Kết',
+      sourceHome: { matchId: bk1.id, outcome: 'winner' }, sourceAway: { matchId: bk2.id, outcome: 'winner' },
       home: w1,
       away: w2,
       date: '',
@@ -480,6 +539,7 @@ export default function AdminDashboard() {
       id: thirdId,
       group: 'Vòng Knock-out',
       round: 'Tranh Hạng 3',
+      sourceHome: { matchId: bk1.id, outcome: 'loser' }, sourceAway: { matchId: bk2.id, outcome: 'loser' },
       home: l1,
       away: l2,
       date: '',
@@ -494,27 +554,50 @@ export default function AdminDashboard() {
       advancingTeam: ''
     };
 
-    update(ref(db, '/'), updates);
+    await update(ref(db, '/'), updates);
     toast.success('🏆 ĐÃ TẠO TRẬN CHUNG KẾT VÀ TRANH HẠNG 3 THÀNH CÔNG!');
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // Reset nhánh Knockout nếu muốn thiết lập lại
-  const handleResetKnockoutBranch = () => {
+  const handleResetKnockoutBranch = async () => {
+    try {
+
     if (window.confirm('⚠️ XÁC NHẬN TẠO LẠI VÒNG KNOCK-OUT TỪ ĐẦU?\nToàn bộ các trận Knock-out (Tứ Kết, Bán Kết, Chung Kết) hiện tại sẽ bị xóa để thiết lập lại.')) {
       const updates = {};
       koMatches.forEach((m) => {
         updates[`matches/${m.id}`] = null;
       });
-      update(ref(db, '/'), updates);
+      await update(ref(db, '/'), updates);
       setKoStep(1);
       toast.info('Đã xóa các trận Knock-out để thiết lập lại');
     }
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // ==========================================
   // 6. PHÊ DUYỆT & SỬA BIÊN BẢN (LOGIC CHẶT CHẼ)
   // ==========================================
-  const handleOpenReview = (match) => {
+  const saveMatchField = async (match, field, value) => {
+    try {
+      if(field==='date')value=normalizeKickoff(value);
+      if(value===(match[field]||''))return;
+      const reason=field==='date'?await askText('Lý do đổi lịch:', 'Điều chỉnh lịch thi đấu'):'Cập nhật thông tin trận';
+      if(!reason?.trim())return;
+      await sendCommand({kind:'patch',patches:{[`matches/${match.id}/${field}`]:value},versions:{[match.id]:match.version||0},reason});toast.success('Đã lưu thông tin trận.');
+    }catch(error){toast.error(error.message);}
+  };
+  const handleOpenReview = async (match) => {
+    try {
+
+    if (match.status === 'Đã xong') {
+      const dependent = matches.filter(x=>x.id!==match.id&&(x.sourceHome?.matchId===match.id||x.sourceAway?.matchId===match.id||match.group!=='Vòng Knock-out'&&x.group==='Vòng Knock-out'));
+      const reason = await askText(`Lý do mở lại? ${dependent.length} trận phụ thuộc trực tiếp sẽ được kiểm tra/khóa; server kiểm tra cả nhánh phía sau.\n${dependent.map(x=>`${x.round}: ${x.home} – ${x.away} (${x.status})`).join('\n')}`);
+      if (!reason?.trim()) return;
+      try { await reopenMatch(match, reason); match = { ...match, revisions: [...(match.revisions || []), {at:new Date().toISOString(),by:JSON.parse(localStorage.getItem('dpl_user')||'{}').username,reason,match:structuredClone({...match,revisions:undefined})}], signatures:null, signatureHash:null, signatureException:'', status: 'Bị từ chối', advancingTeam: '', version: (match.version || 0) + 1 }; } catch (e) { toast.error(e.message); return; }
+    }
     const clone = JSON.parse(JSON.stringify(match));
     if (clone.group === 'Vòng Knock-out' && !clone.advancingTeam) {
       const sA = Number(clone.scoreA) || 0;
@@ -532,7 +615,9 @@ export default function AdminDashboard() {
     setRevEvTeam('');
     setRevEvPlayer('');
     setRevEvMin('');
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   const handleScoreChange = (side, rawVal) => {
     const num = Math.max(0, parseInt(rawVal) || 0);
@@ -544,23 +629,26 @@ export default function AdminDashboard() {
   };
 
   const handleAddReviewEvent = () => {
+    try {
     if (!revEvTeam || !revEvPlayer || !revEvMin) {
       toast.warning('Vui lòng chọn Đội, Cầu thủ và nhập Số phút!');
       return;
     }
 
-    const minNum = Math.max(1, parseInt(revEvMin) || 1);
+    const minNum = parseMatchMinute(revEvMin).minute;
     const newEv = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
+      ...parseMatchMinute(revEvMin, parseInt(revEvMin) > Number(tourConfig.halfDuration) ? 2 : 1),
+      playerId: (players[revEvTeam] || []).find(p => `${p.num} - ${p.name}` === revEvPlayer)?.id,
       type: revEvType,
       detail: revEvDetail,
       team: revEvTeam,
       player: revEvPlayer,
       minute: minNum,
-      displayMinute: revEvMin.includes('+') || revEvMin.includes("'") ? revEvMin : `${minNum}'`
+      displayMinute: parseMatchMinute(revEvMin).displayMinute
     };
 
-    const updatedEvents = [...(reviewingMatch.events || []), newEv].sort((a, b) => a.minute - b.minute);
+    const updatedEvents = [...(reviewingMatch.events || []), newEv].sort(compareEvents);
     const { goalsA, goalsB } = calculateEventsGoals(updatedEvents, reviewingMatch.home, reviewingMatch.away);
 
     setReviewingMatch({
@@ -572,10 +660,11 @@ export default function AdminDashboard() {
 
     setRevEvMin('');
     toast.success(`Đã thêm sự kiện phút ${newEv.displayMinute} và cập nhật tỉ số (${goalsA} - ${goalsB})`);
+    } catch(error){toast.error(error.message);}
   };
 
   const handleRemoveReviewEvent = (evId) => {
-    const updatedEvents = (reviewingMatch.events || []).filter((e) => e.id !== evId);
+    const updatedEvents = (reviewingMatch.events || []).map(e => e.id === evId ? {...e,cancelled:true,cancelReason:'BTC sửa biên bản'} : e);
     const { goalsA, goalsB } = calculateEventsGoals(updatedEvents, reviewingMatch.home, reviewingMatch.away);
 
     setReviewingMatch({
@@ -598,7 +687,9 @@ export default function AdminDashboard() {
     toast.success(`Đã đồng bộ tỉ số về: ${goalsA} - ${goalsB}`);
   };
 
-  const handleSaveAndApprove = () => {
+  const handleSaveAndApprove = async () => {
+    try {
+
     const finalScoreA = Math.max(0, parseInt(reviewingMatch.scoreA) || 0);
     const finalScoreB = Math.max(0, parseInt(reviewingMatch.scoreB) || 0);
 
@@ -608,19 +699,20 @@ export default function AdminDashboard() {
       reviewingMatch.away
     );
 
-    if (finalScoreA !== evGoalsA || finalScoreB !== evGoalsB) {
+    if (reviewingMatch.resultType !== 'forfeit' && (finalScoreA !== evGoalsA || finalScoreB !== evGoalsB)) {
       toast.error(
         `⚠️ TỈ SỐ CHƯA KHỚP VỚI SỰ KIỆN GHI BÀN!\n- Đội ${reviewingMatch.home}: Tỉ số là ${finalScoreA} nhưng chỉ có ${evGoalsA} sự kiện bàn thắng.\n- Đội ${reviewingMatch.away}: Tỉ số là ${finalScoreB} nhưng chỉ có ${evGoalsB} sự kiện bàn thắng.\nVui lòng thêm cầu thủ ghi bàn cho đủ hoặc bấm "Đồng bộ tỉ số"!`
       );
       return;
     }
 
-    if (reviewingMatch.group === 'Vòng Knock-out' && !reviewingMatch.advancingTeam && !reviewingMatch.round?.includes('Tranh Hạng 3')) {
+    const winner = resolveWinner({ ...reviewingMatch, shootoutRounds: tourConfig.shootoutRounds || 5 });
+    if (reviewingMatch.group === 'Vòng Knock-out' && !winner) {
       toast.warning('Vui lòng chọn ĐỘI GIÀNH QUYỀN ĐI TIẾP cho trận Knock-out!');
       return;
     }
 
-    update(ref(db, `matches/${reviewingMatch.id}`), {
+    await update(ref(db, `matches/${reviewingMatch.id}`), {
       status: 'Đã xong',
       scoreA: finalScoreA,
       scoreB: finalScoreB,
@@ -628,73 +720,80 @@ export default function AdminDashboard() {
       penB: reviewingMatch.penB !== undefined && reviewingMatch.penB !== '' ? Math.max(0, parseInt(reviewingMatch.penB) || 0) : '',
       events: reviewingMatch.events || [],
       rejectReason: '',
-      advancingTeam: reviewingMatch.advancingTeam || ''
+      advancingTeam: reviewingMatch.group === 'Vòng Knock-out' ? winner : '',
+      shootout: reviewingMatch.shootout || [],
+      resultType: reviewingMatch.resultType || 'played',
+      administrativeReason: reviewingMatch.administrativeReason || '',
+      signatureException: reviewingMatch.signatureException || ''
     });
 
     toast.success('✅ Đã phê duyệt và chốt kết quả trận đấu thành công!');
     setReviewingMatch(null);
-  };
 
-  const handleRejectMatch = () => {
-    const reason = window.prompt('Nhập lý do từ chối để Thư ký nắm được và sửa lại:');
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const handleRejectMatch = async () => {
+    try {
+
+    const reason = await askText('Nhập lý do từ chối để Thư ký nắm được và sửa lại:');
     if (reason) {
-      update(ref(db, `matches/${reviewingMatch.id}`), {
+      await update(ref(db, `matches/${reviewingMatch.id}`), {
         status: 'Bị từ chối',
         rejectReason: reason
       });
       toast.info('Đã trả biên bản về cho Thư ký');
       setReviewingMatch(null);
     }
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // ==========================================
   // 7. QUẢN LÝ CẦU THỦ & PROMPT AI
   // ==========================================
-  const handleAddSinglePlayer = () => {
+  const handleAddSinglePlayer = async () => {
+    try {
+
     if (!newPlayer.team || !newPlayer.num || !newPlayer.name) {
       toast.warning('Vui lòng chọn Đội, nhập Số áo và Tên thật!');
       return;
     }
 
     const teamPlayers = players[newPlayer.team] || [];
-    set(ref(db, `players/${newPlayer.team}`), [...teamPlayers, { ...newPlayer }]);
+    await set(ref(db, `players/${newPlayer.team}`), validatePlayers([...teamPlayers, { ...newPlayer }], newPlayer.team, teamPlayers));
     setNewPlayer({ ...newPlayer, num: '', name: '', shirtName: '', avatar: '' });
     toast.success('Đã thêm 1 cầu thủ vào đội hình!');
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const [rosterImport, setRosterImport] = useState(null);
+  const [importMode, setImportMode] = useState('merge');
+  const [rosterUndo, setRosterUndo] = useState(null);
+  const handleImportJSON = async (e) => {
+    const file=e.target.files[0];e.target.value='';
+    if(!file || !newPlayer.team)return;
+    try {
+      if(file.size>2e6)throw new Error('JSON cầu thủ tối đa 2 MB.');
+      const imported=validatePlayers(JSON.parse(await file.text()),newPlayer.team,players[newPlayer.team]||[]);
+      setRosterImport({team:newPlayer.team,players:imported});
+    } catch(error){toast.error(error.message || 'File JSON không hợp lệ.');}
   };
-
-  const handleImportJSON = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!newPlayer.team) {
-      toast.warning('Vui lòng Chọn Đội ở ô bên trên trước khi tải file JSON!');
-      return;
-    }
-
-    if (!window.confirm(`⚠️ BẠN CÓ CHẮC CHẮN? \nHành động này sẽ XÓA SẠCH danh sách hiện tại của đội [${newPlayer.team}] và GHI ĐÈ bằng danh sách mới trong file JSON.`)) {
-      e.target.value = null;
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const json = JSON.parse(evt.target.result);
-        const imported = json.map((p) => ({
-          team: newPlayer.team,
-          num: p.soAo || p.num,
-          name: p.ten || p.name,
-          shirtName: p.tenAo || p.shirtName || p.ten || p.name,
-          avatar: p.avatar || ''
-        }));
-
-        set(ref(db, `players/${newPlayer.team}`), imported);
-        toast.success(`✅ Đã GHI ĐÈ ${imported.length} cầu thủ vào đội ${newPlayer.team}!`);
-        e.target.value = null;
-      } catch {
-        toast.error('File JSON không đúng định dạng!');
-      }
-    };
-    reader.readAsText(file);
+  const applyRosterImport = async () => {
+    try {
+      const previous=players[rosterImport.team]||[];
+      const merged=importMode==='replace'?rosterImport.players:[...previous.filter(p=>!rosterImport.players.some(x=>x.id===p.id||x.num===p.num)),...rosterImport.players];
+      const next=validatePlayers(merged,rosterImport.team,previous);
+      await set(ref(db,`players/${rosterImport.team}`),next);
+      setRosterUndo({team:rosterImport.team,previous,applied:next});setRosterImport(null);toast.success('Đã nhập danh sách; có thể hoàn tác lần nhập vừa rồi.');
+    } catch(error){toast.error(error.message);}
+  };
+  const undoRosterImport = async () => {
+    try {
+      if(JSON.stringify(players[rosterUndo.team])!==JSON.stringify(rosterUndo.applied))throw new Error('Danh sách đã thay đổi; xem lại trước khi hoàn tác.');
+      await set(ref(db,`players/${rosterUndo.team}`),rosterUndo.previous);setRosterUndo(null);toast.success('Đã hoàn tác import.');
+    } catch(error){toast.error(error.message);}
   };
 
   const handleCopyText = (text, msg) => {
@@ -713,11 +812,15 @@ export default function AdminDashboard() {
     toast.success('Đã tải xuống file template_cauthu.json!');
   };
 
-  const handleSaveTeamEdit = () => {
+  const handleSaveTeamEdit = async () => {
+    try {
+
     if (!editTeam) return;
-    set(ref(db, `players/${editTeam}`), editingPlayers);
+    await set(ref(db, `players/${editTeam}`), validatePlayers(editingPlayers, editTeam, players[editTeam] || []));
     toast.success(`Đã lưu danh sách đội hình ${editTeam}!`);
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   const pendingApprovals = matches.filter((m) => m.status === 'Chờ duyệt');
   const allTeamsList = groupsData.flatMap((g) => g.teams || []);
@@ -780,7 +883,7 @@ export default function AdminDashboard() {
             );
             const currentScoreA = Math.max(0, parseInt(reviewingMatch.scoreA) || 0);
             const currentScoreB = Math.max(0, parseInt(reviewingMatch.scoreB) || 0);
-            const isScoreMismatch = currentScoreA !== evGoalsA || currentScoreB !== evGoalsB;
+            const isScoreMismatch = reviewingMatch.resultType !== 'forfeit' && (currentScoreA !== evGoalsA || currentScoreB !== evGoalsB);
 
             return (
               <div className="modal-backdrop animate-fade-in" onClick={() => setReviewingMatch(null)}>
@@ -799,6 +902,7 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="modal-body">
+                    {!!reviewingMatch.revisions?.length && <details className="qa-checklist mb16"><summary>Lịch sử mở lại ({reviewingMatch.revisions.length} phiên bản)</summary>{reviewingMatch.revisions.map((r,i)=><div key={i} className="mb12"><b>{new Date(r.at).toLocaleString('vi-VN')} · {r.by}</b><p>{r.reason}</p><p>Bản trước: {r.match.scoreA}–{r.match.scoreB} · {r.match.status} · {(r.match.events||[]).filter(e=>!e.cancelled).length} sự kiện. Bản đang sửa: {reviewingMatch.scoreA}–{reviewingMatch.scoreB} · {(reviewingMatch.events||[]).filter(e=>!e.cancelled).length} sự kiện.</p><button className="btn ghost tiny" onClick={()=>setPrintingMatch(r.match)}>Xem biên bản phiên bản trước</button></div>)}</details>}
                     {/* Score Editing */}
                     <div className="match-banner">
                       <div className="scoreboard-container">
@@ -868,6 +972,7 @@ export default function AdminDashboard() {
                             className="input-dark"
                             style={{ width: '65px', textAlign: 'center' }}
                             placeholder="Pen A"
+                            readOnly
                             value={reviewingMatch.penA ?? ''}
                             onChange={(e) => setReviewingMatch({ ...reviewingMatch, penA: e.target.value })}
                           />
@@ -878,6 +983,7 @@ export default function AdminDashboard() {
                             className="input-dark"
                             style={{ width: '65px', textAlign: 'center' }}
                             placeholder="Pen B"
+                            readOnly
                             value={reviewingMatch.penB ?? ''}
                             onChange={(e) => setReviewingMatch({ ...reviewingMatch, penB: e.target.value })}
                           />
@@ -885,13 +991,20 @@ export default function AdminDashboard() {
                       )}
                     </div>
 
+                    <div className="qa-checklist mb16">
+                      <h4 className="text-accent">Đối chiếu trước duyệt</h4><p className={isScoreMismatch ? 'text-red' : 'text-accent'}>Tỷ số / sự kiện: {currentScoreA}–{currentScoreB} / {evGoalsA}–{evGoalsB}</p>
+                      <label className="form-label">Loại kết quả<select className="select-dark" value={reviewingMatch.resultType || 'played'} onChange={e => setReviewingMatch({ ...reviewingMatch, resultType: e.target.value })}><option value="played">Thi đấu bình thường</option><option value="forfeit">Xử thua / quyết định hành chính</option></select></label>
+                      {reviewingMatch.resultType === 'forfeit' && <label className="form-label">Lý do quyết định<input className="input-dark" value={reviewingMatch.administrativeReason || ''} onChange={e => setReviewingMatch({ ...reviewingMatch, administrativeReason: e.target.value })}/></label>}
+                      <label className="form-label">Ngoại lệ chữ ký / nội dung sửa sau ký (BTC ghi lý do)<input className="input-dark" placeholder="Để trống nếu biên bản đã ký đúng nội dung" value={reviewingMatch.signatureException || ''} onChange={e => setReviewingMatch({ ...reviewingMatch, signatureException: e.target.value })}/></label>
+                    </div>
+                    {reviewingMatch.group === 'Vòng Knock-out' && currentScoreA === currentScoreB && <ShootoutPanel match={reviewingMatch} players={players} rounds={tourConfig.shootoutRounds || 5} onChange={kicks => { const result = { ...reviewingMatch, shootout: kicks }; setReviewingMatch({ ...result, advancingTeam: resolveWinner(result) }); }}/>}
                     {/* 🏆 BẮT BUỘC: CHỌN ĐỘI GIÀNH QUYỀN ĐI TIẾP (KNOCK-OUT) - ĐẶT NGAY ĐẦU TRỰC QUAN */}
                     {reviewingMatch.group === 'Vòng Knock-out' && (
                       <div className="ko-winner-selector-box">
                         <div className="flex-between mb12">
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-gold)', fontWeight: '800', fontSize: '14px' }}>
                             <Trophy size={18} />
-                            <span>BẮT BUỘC: CHỌN ĐỘI THẮNG / GIÀNH QUYỀN ĐI TIẾP (KNOCK-OUT)</span>
+                            <span>ĐỘI THẮNG ĐƯỢC KIỂM TRA TỰ ĐỘNG TỪ KẾT QUẢ</span>
                           </div>
                           <span className="badge badge-accent-glow" style={{ fontSize: '11px' }}>
                             {reviewingMatch.advancingTeam ? `Đã chọn: ${reviewingMatch.advancingTeam}` : 'Chưa chọn đội đi tiếp'}
@@ -901,7 +1014,7 @@ export default function AdminDashboard() {
                         <div className="ko-winner-grid">
                           <div
                             className={`ko-winner-card ${reviewingMatch.advancingTeam === reviewingMatch.home ? 'selected' : ''}`}
-                            onClick={() => setReviewingMatch({ ...reviewingMatch, advancingTeam: reviewingMatch.home })}
+                            onClick={() => setReviewingMatch({ ...reviewingMatch, advancingTeam: resolveWinner(reviewingMatch) })}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(0,255,135,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -923,7 +1036,7 @@ export default function AdminDashboard() {
 
                           <div
                             className={`ko-winner-card ${reviewingMatch.advancingTeam === reviewingMatch.away ? 'selected' : ''}`}
-                            onClick={() => setReviewingMatch({ ...reviewingMatch, advancingTeam: reviewingMatch.away })}
+                            onClick={() => setReviewingMatch({ ...reviewingMatch, advancingTeam: resolveWinner(reviewingMatch) })}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(0,255,135,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1070,11 +1183,11 @@ export default function AdminDashboard() {
                       <div className="flex-between mb14">
                         <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                           <FileText size={17} className="text-accent" />
-                          <span>📋 DANH SÁCH SỰ KIỆN ĐÃ GHI NHẬN ({(reviewingMatch.events || []).length} SỰ KIỆN)</span>
+                          <span>📋 DANH SÁCH SỰ KIỆN ĐÃ GHI NHẬN ({(reviewingMatch.events || []).filter(e=>!e.cancelled).length} SỰ KIỆN)</span>
                         </h4>
                       </div>
 
-                      {(reviewingMatch.events || []).length === 0 ? (
+                      {(reviewingMatch.events || []).filter(e=>!e.cancelled).length === 0 ? (
                         <div className="event-empty-box">
                           <FileText size={28} className="text-dim" style={{ opacity: 0.5 }} />
                           <div style={{ color: 'var(--text-secondary)', fontWeight: '700', fontSize: '13.5px' }}>
@@ -1098,7 +1211,7 @@ export default function AdminDashboard() {
                               </tr>
                             </thead>
                             <tbody>
-                              {reviewingMatch.events.map((e) => (
+                              {reviewingMatch.events.filter(e=>!e.cancelled).map((e) => (
                                 <tr key={e.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
                                   <td style={{ textAlign: 'center' }}>
                                     <span className="event-minute-badge">
@@ -1121,7 +1234,7 @@ export default function AdminDashboard() {
                                       <span className="badge" style={{ background: 'var(--accent-gold)', color: '#000', fontWeight: '800' }}>
                                         🟨 THẺ VÀNG
                                       </span>
-                                    ) : e.detail === 'Đỏ' || e.detail === 'red' ? (
+                                    ) : e.detail === 'Đỏ' || e.detail === 'red' || e.detail === 'direct_red' || e.detail === 'second_yellow_red' ? (
                                       <span className="badge" style={{ background: 'var(--accent-red)', color: '#fff', fontWeight: '800' }}>
                                         🟥 THẺ ĐỎ
                                       </span>
@@ -1222,7 +1335,7 @@ export default function AdminDashboard() {
                     <button type="button" className="btn danger" onClick={handleRejectMatch}>
                       <X size={16} /> Từ Chối (Trả về Thư ký)
                     </button>
-                    <button type="button" className="btn green" onClick={handleSaveAndApprove}>
+                    <button type="button" className="btn green" disabled={isScoreMismatch} onClick={handleSaveAndApprove}>
                       <Check size={16} /> Lưu & Duyệt Kết Quả
                     </button>
                   </div>
@@ -1231,6 +1344,7 @@ export default function AdminDashboard() {
             );
           })()}
 
+          <AdminTools tourConfig={tourConfig} />
           {/* Pending Matches & Discipline Cards */}
           {(tourStatus === 'active' || tourStatus === 'completed') && (
             <div className="grid-2 mb24">
@@ -1324,17 +1438,17 @@ export default function AdminDashboard() {
           )}
 
           {/* Active Suspensions */}
-          {Object.keys(suspensions).length > 0 && (
+          {Object.values(suspensions).filter(s => s.remainingMatches !== 0).length > 0 && (
             <div className="card mb24" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)' }}>
               <div className="card-header">
                 <div className="card-title text-red">
                   <AlertOctagon size={18} />
-                  <span>Danh Sách Cầu Thủ Đang Bị Cấm Thi Đấu ({Object.keys(suspensions).length})</span>
+                  <span>Danh Sách Cầu Thủ Đang Bị Cấm Thi Đấu ({Object.values(suspensions).filter(s => s.remainingMatches !== 0).length})</span>
                 </div>
               </div>
 
               <div className="grid-auto">
-                {Object.entries(suspensions).map(([pKey, data]) => {
+                {Object.entries(suspensions).filter(([, data]) => data.remainingMatches !== 0).map(([pKey, data]) => {
                   const team = pKey.split('@@')[0];
                   const player = pKey.split('@@')[1];
 
@@ -1352,8 +1466,8 @@ export default function AdminDashboard() {
                       }}
                     >
                       <div>
-                        <div style={{ fontWeight: '700', color: 'var(--accent-red)' }}>{player}</div>
-                        <div className="text-dim" style={{ fontSize: '11px' }}>{team} • {data.reason}</div>
+                        <div style={{ fontWeight: '700', color: 'var(--accent-red)' }}>{data.player || player}</div>
+                        <div className="text-dim" style={{ fontSize: '11px' }}>{team} • {data.reason} · Còn {data.remainingMatches ?? 1} trận {data.needsReview ? '· Cần xét lại căn cứ' : ''}</div>
                       </div>
                       <button
                         className="btn ghost tiny"
@@ -1392,7 +1506,7 @@ export default function AdminDashboard() {
 
             {tourStatus === 'none' && (
               <div className="text-center" style={{ padding: '30px' }}>
-                <button className="btn green" onClick={() => set(ref(db, 'tourStatus'), 'config')}>
+                <button className="btn green" onClick={async () => { try { await set(ref(db, 'tourStatus'), 'config'); } catch(error) { toast.error(error.message); } }}>
                   <Plus size={16} /> BẮT ĐẦU TẠO GIẢI ĐẤU MỚI
                 </button>
               </div>
@@ -1426,14 +1540,7 @@ export default function AdminDashboard() {
                   {tourConfig.format === 'group' && (
                     <div className="form-group">
                       <label className="form-label">Số Lượng Bảng:</label>
-                      <input
-                        type="number"
-                        className="input-dark"
-                        min="2"
-                        max="8"
-                        value={tourConfig.numGroups}
-                        onChange={(e) => setTourConfig({ ...tourConfig, numGroups: Number(e.target.value) })}
-                      />
+                      <select className="select-dark" value={tourConfig.numGroups} onChange={e=>setTourConfig({...tourConfig,numGroups:Number(e.target.value)})}>{[1,2,4].map(n=><option key={n} value={n}>{n} bảng</option>)}</select>
                     </div>
                   )}
 
@@ -1456,8 +1563,8 @@ export default function AdminDashboard() {
                       value={tourConfig.knockoutFormat || 'quarter'}
                       onChange={(e) => setTourConfig({ ...tourConfig, knockoutFormat: e.target.value })}
                     >
-                      <option value="quarter">🏆 Bắt đầu từ TỨ KẾT (Mỗi bảng lấy 4 đội đầu)</option>
-                      <option value="semi">🏆 Bắt đầu từ BÁN KẾT (Mỗi bảng lấy 2 đội đầu)</option>
+                      <option value="quarter">🏆 TỨ KẾT · 8 suất chia đều các bảng</option>
+                      <option value="semi">🏆 BÁN KẾT · 4 suất chia đều các bảng</option>
                     </select>
                   </div>
                 </div>
@@ -1521,7 +1628,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="flex-between">
-                  <button className="btn ghost" onClick={() => set(ref(db, 'tourStatus'), 'config')}>
+                  <button className="btn ghost" onClick={async () => { try { await set(ref(db, 'tourStatus'), 'config'); } catch(error) { toast.error(error.message); } }}>
                     Quay lại Cấu hình
                   </button>
                   <button className="btn green" onClick={generateSchedule}>
@@ -1551,7 +1658,7 @@ export default function AdminDashboard() {
                         <th>Vòng / Bảng</th>
                         <th>Cặp Đấu</th>
                         <th>Tỉ Số</th>
-                        <th>Ngày Giờ</th>
+                        <th>Ngày Giờ VN / Sân</th>
                         <th>Trọng Tài</th>
                         <th>Thư Ký</th>
                         <th>Trạng Thái</th>
@@ -1572,8 +1679,8 @@ export default function AdminDashboard() {
                                 type="datetime-local"
                                 className="input-dark"
                                 style={{ padding: '4px 8px', fontSize: '12px' }}
-                                value={m.date || ''}
-                                onChange={(e) => update(ref(db, `matches/${m.id}`), { date: e.target.value })}
+                                defaultValue={kickoffInput(m.date)}
+                                onBlur={e => saveMatchField(m, 'date', e.target.value)}
                               />
                             ) : (
                               formatDateTime(m.date)
@@ -1586,7 +1693,7 @@ export default function AdminDashboard() {
                                 className="input-dark"
                                 style={{ padding: '4px 8px', fontSize: '12px', width: '100px' }}
                                 defaultValue={m.ref || ''}
-                                onBlur={(e) => update(ref(db, `matches/${m.id}`), { ref: e.target.value })}
+                                onBlur={e => saveMatchField(m, 'ref', e.target.value)}
                               />
                             ) : (
                               m.ref || '—'
@@ -1599,7 +1706,7 @@ export default function AdminDashboard() {
                                 className="input-dark"
                                 style={{ padding: '4px 8px', fontSize: '12px', width: '100px' }}
                                 defaultValue={m.sec || ''}
-                                onBlur={(e) => update(ref(db, `matches/${m.id}`), { sec: e.target.value })}
+                                onBlur={e => saveMatchField(m, 'sec', e.target.value)}
                               />
                             ) : (
                               m.sec || '—'
@@ -1608,6 +1715,11 @@ export default function AdminDashboard() {
                           <td><span className="badge badge-ghost">{m.status}</span></td>
                           <td>
                             <div style={{ display: 'flex', gap: '4px' }}>
+                              <input className="input-dark" aria-label="Sân thi đấu" placeholder="Sân thi đấu" defaultValue={m.venue || ''} onBlur={e=>saveMatchField(m,'venue',e.target.value)} /><input className="input-dark" aria-label="Tài khoản thư ký được phân công" placeholder="Username thư ký" defaultValue={m.assignedSecretary || ''} onBlur={async e => {
+    try {
+ if (e.target.value.trim() !== (m.assignedSecretary || '')) await update(ref(db, `matches/${m.id}`), { assignedSecretary: e.target.value.trim().toLowerCase() }).catch(err => toast.error(err.message));
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+}} />
                               <button className="btn ghost tiny" onClick={() => handleOpenReview(m)}>
                                 Sửa
                               </button>
@@ -2004,7 +2116,7 @@ export default function AdminDashboard() {
                 {/* Import JSON Overwrite box */}
                 <div style={{ padding: '20px', background: 'rgba(239, 68, 68, 0.05)', border: '1px dashed rgba(239, 68, 68, 0.4)', borderRadius: 'var(--radius-md)', marginBottom: '24px' }}>
                   <div style={{ color: 'var(--accent-red)', fontWeight: 'bold', fontSize: '13.5px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <AlertTriangle size={16} /> Tải file JSON (GHI ĐÈ 100% DANH SÁCH HIỆN TẠI):
+                    <AlertTriangle size={16} /> Nhập JSON · Xem trước, gộp hoặc thay danh sách:
                   </div>
                   <p className="text-dim mb12" style={{ fontSize: '12.5px' }}>
                     Chọn file <code>.json</code> chứa danh sách cầu thủ của đội đã chọn ở trên.
@@ -2015,6 +2127,8 @@ export default function AdminDashboard() {
                   </label>
                 </div>
 
+                {rosterImport && <div className="card mb24 qa-checklist"><h3>Xem trước: {rosterImport.team} · {rosterImport.players.length} cầu thủ</h3><label className="form-label">Cách nhập<select className="select-dark" value={importMode} onChange={e=>setImportMode(e.target.value)}><option value="merge">Gộp vào danh sách hiện tại</option><option value="replace">Thay toàn bộ danh sách</option></select></label><div className="table-container"><table className="dpl-table"><thead><tr><th>Số áo</th><th>Họ tên</th><th>Tên áo</th></tr></thead><tbody>{rosterImport.players.map(p=><tr key={p.id}><td>{p.num}</td><td>{p.name}</td><td>{p.shirtName}</td></tr>)}</tbody></table></div><p className="text-dim">Gộp cập nhật số áo trùng. Hồ sơ đã xuất hiện trong biên bản phải giữ mã cầu thủ; tên và số áo cũ được giữ trong lịch sử.</p><button className="btn green" onClick={applyRosterImport}>Xác nhận nhập</button><button className="btn ghost" onClick={()=>setRosterImport(null)}>Hủy</button></div>}
+                {rosterUndo && <button className="btn ghost mb16" onClick={undoRosterImport}>Hoàn tác import gần nhất · {rosterUndo.team}</button>}
                 {/* AI Prompt & JSON Structure Helpers */}
                 <div className="grid-2 mb24">
                   {/* JSON Template Box */}
@@ -2146,7 +2260,7 @@ export default function AdminDashboard() {
                               const file = e.target.files?.[0];
                               if (!file) return;
                               try {
-                                const dataUrl = await compressAvatarImage(file);
+                                const dataUrl = await chooseAvatarImage(file);
                                 setNewPlayer({ ...newPlayer, avatar: dataUrl });
                                 toast.success('Đã tải và tối ưu ảnh đại diện!');
                               } catch (err) {
@@ -2240,7 +2354,7 @@ export default function AdminDashboard() {
                                           const file = e.target.files?.[0];
                                           if (!file) return;
                                           try {
-                                            const dataUrl = await compressAvatarImage(file);
+                                            const dataUrl = await chooseAvatarImage(file);
                                             const updated = [...editingPlayers];
                                             updated[idx].avatar = dataUrl;
                                             setEditingPlayers(updated);
@@ -2309,7 +2423,7 @@ export default function AdminDashboard() {
                                           const file = e.target.files?.[0];
                                           if (!file) return;
                                           try {
-                                            const dataUrl = await compressAvatarImage(file);
+                                            const dataUrl = await chooseAvatarImage(file);
                                             const updated = [...editingPlayers];
                                             updated[idx].avatar = dataUrl;
                                             setEditingPlayers(updated);

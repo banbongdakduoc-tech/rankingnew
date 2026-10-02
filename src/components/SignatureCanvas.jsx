@@ -17,6 +17,7 @@ const SignatureCanvas = forwardRef(
     ref
   ) => {
     const canvasRef = useRef(null);
+    const strokeChanged = useRef(false);
     const [isDrawing, setIsDrawing] = useState(false);
     const [hasDrawn, setHasDrawn] = useState(false);
 
@@ -38,6 +39,7 @@ const SignatureCanvas = forwardRef(
       if (!canvas) return;
 
       const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -88,6 +90,7 @@ const SignatureCanvas = forwardRef(
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
 
+      strokeChanged.current = false;
       ctx.beginPath();
       ctx.moveTo(x, y);
       setIsDrawing(true);
@@ -103,6 +106,7 @@ const SignatureCanvas = forwardRef(
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
 
+      strokeChanged.current = true;
       ctx.lineTo(x, y);
       ctx.stroke();
       if (!hasDrawn) {
@@ -113,7 +117,7 @@ const SignatureCanvas = forwardRef(
     const stopDrawing = () => {
       if (!isDrawing || readOnly) return;
       setIsDrawing(false);
-      if (onChange) {
+      if (onChange && strokeChanged.current) {
         const canvas = canvasRef.current;
         onChange(canvas.toDataURL('image/png'));
       }

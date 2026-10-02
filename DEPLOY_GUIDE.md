@@ -1,80 +1,28 @@
-# 🚀 HƯỚNG DẪN TRIỂN KHAI HỆ THỐNG LÊN NETLIFY & RENDER
+# Triển khai nhánh demo, giữ main nguyên trạng
 
-Hệ thống **Dược Premier League 2026** đã được xây dựng hoàn chỉnh với kiến trúc tách biệt Frontend & Backend bảo mật cao:
-- **Frontend (Giao diện Khán giả, Thư ký, Ban Tổ Chức)**: Triển khai lên **Netlify**.
-- **Backend (API Server + Database An Toàn + WebSocket Realtime)**: Triển khai lên **Render.com**.
+## Backend
 
----
+URL `https://duoc-premier-league-backend.onrender.com` đã được kiểm tra chỉ đọc ngày 02/10/2026; API đang chạy chưa báo schema 2. Không trỏ demo mới vào service cũ để tác nghiệp. Việc push nhánh demo không tự nâng cấp service đang theo dõi main.
 
-## 🌟 PHẦN 1: TRIỂN KHAI BACKEND LÊN RENDER.COM (Làm trước)
+Tạo service Render riêng từ **branch demo**, theo `render.yaml` (tên `duoc-premier-league-demo-api`). Có thể dùng cùng Firebase project với main nhưng bắt buộc namespace `environments/demo2026`; mã demo từ chối root và các namespace ngoài `environments/demo…`.
 
-### Bước 1: Đẩy mã nguồn lên GitHub / GitLab
-1. Khởi tạo Git (nếu chưa có) và push toàn bộ mã nguồn dự án lên repository của bạn trên GitHub.
+Thiết lập `FIREBASE_DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON` (secret từ Firebase service account, không đưa vào frontend/Git/chat), `TRUST_PROXY_HOPS=1` theo blueprint Render; local để 0. `CLIENT_URL` là origin Netlify demo chính xác. Blueprint tạo `JWT_SECRET` ngẫu nhiên. Không đặt `CLIENT_URL=*`. Node 24 được khuyến nghị; file database không được phép trong production vì filesystem Render không bền vững.
 
-### Bước 2: Tạo Web Service trên Render
-1. Đăng nhập vào [Render Dashboard](https://dashboard.render.com/).
-2. Bấm nút **New +** ➔ Chọn **Web Service**.
-3. Chọn Repository GitHub dự án `duoc-premier-league`.
-4. Điền các thông số cấu hình như sau:
-   - **Name**: `duoc-premier-league-backend` (hoặc tên tùy thích).
-   - **Region**: `Singapore` (để tốc độ truyền tải về Việt Nam nhanh nhất).
-   - **Branch**: `main` (hoặc `master`).
-   - **Runtime**: `Node`.
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Instance Type**: `Free` (hoặc Starter).
+Firebase client rules của namespace demo phải từ chối đọc/ghi trực tiếp; server Admin SDK truy cập qua service account. Ví dụ thêm rules riêng `environments/demo2026: { ".read": false, ".write": false }` và kiểm tra không có quyền true kế thừa từ root (Firebase không thể thu hồi quyền đã cấp ở parent). Không sửa rules của giải thật mà chưa kiểm tra ảnh hưởng. Đây là bước cấu hình tài khoản cloud, không được thực hiện tự động bởi push.
 
-### Bước 3: Thêm Biến Môi Trường (Environment Variables) trên Render
-Tại mục **Environment Variables**, thêm các cặp khóa - giá trị sau:
-- `NODE_ENV`: `production`
-- `PORT`: `5000`
-- `JWT_SECRET`: `duoc_premier_league_2026_super_secret_jwt_key_secure_xyz` (hoặc chuỗi bí mật của bạn)
-- `ADMIN_USER`: `admin`
-- `ADMIN_PASSWORD`: `btc2026`
-- `REFEREE_USER`: `thuky`
-- `REFEREE_PASSWORD`: `thuky2026`
-- `CLIENT_URL`: `*` (hoặc điền link Netlify sau khi tạo xong ở Phần 2).
+Namespace mới không có tài khoản mặc định. Chủ hệ thống tạo `accounts/<username>` (username viết thường) qua Firebase Console trong namespace demo: `role` là `admin` hoặc `referee`, `name`, `passwordHash` bcrypt, `sessionVersion: 0`. Tạo hash trên máy bằng `npm run account:hash` (nhập mật khẩu qua terminal, không nằm trong lịch sử lệnh). Không lưu mật khẩu plaintext. Đổi `sessionVersion` hoặc `disabled:true` thu hồi phiên. Dữ liệu cũ sao chép vào demo cần có bản sao lưu gốc; startup migration gắn mã cầu thủ/sự kiện ổn định, hash mật khẩu cũ và giữ kết quả luân lưu tổng lịch sử. Trận dữ liệu cũ thiếu phân công phải được BTC chỉ định thư ký trước tác nghiệp.
 
-5. Bấm **Create Web Service**.
-6. Chờ Render build và khởi chạy trong 1-2 phút. Sau khi xong, bạn sẽ nhận được **Backend URL** (Ví dụ: `https://duoc-premier-league-backend.onrender.com`).
+Kiểm tra `/api/health` trả `schemaVersion:2`, tài khoản đúng/sai, public DTO, và CORS từ Netlify demo trước dùng. Backend không khởi động nếu thiếu secrets/namespace hoặc dùng file ở production.
 
----
+## Frontend
 
-## 🌐 PHẦN 2: TRIỂN KHAI FRONTEND LÊN NETLIFY
+Netlify kết nối branch **demo**, build `npm run build`, publish `dist`; `VITE_API_URL` là URL **service demo v2**. `netlify.toml` hỗ trợ reload `/btc` và `/thuky`. Build lại khi thay biến Vite. Không thay branch deploy của site main. Service worker chỉ cache giao diện và tài nguyên tĩnh; không cache API/token.
 
-### Bước 1: Tạo Site mới trên Netlify
-1. Đăng nhập vào [Netlify Dashboard](https://app.netlify.com/).
-2. Bấm **Add new site** ➔ Chọn **Import an existing project** ➔ Chọn **GitHub**.
-3. Chọn repository `duoc-premier-league`.
+Tác nghiệp offline chỉ khả dụng sau khi thiết bị từng tải ứng dụng và dữ liệu trận. Bộ nhớ trình duyệt phải hoạt động; xóa dữ liệu trình duyệt/chế độ riêng tư/dung lượng cạn có thể làm mất nháp. Xuất nháp trước đổi máy. Thao tác conflict được giữ trên máy, người dùng đối chiếu và nhập lại rồi loại bỏ bản conflict; không tự ghi đè dữ liệu mới trên server. Đồng hồ canonical dùng mốc server; trình duyệt lưu offset giờ server và nháp offline. BTC/thư ký có nút chỉnh phút để đối chiếu thời gian trọng tài.
 
-### Bước 2: Cấu hình Build & Deploy trên Netlify
-1. Các thông số cấu hình Netlify sẽ tự động nhận diện từ file `netlify.toml`:
-   - **Base directory**: để trống.
-   - **Build command**: `npm run build`
-   - **Publish directory**: `dist`
-2. **Thêm Biến Môi Trường (Environment Variables) trên Netlify**:
-   - Bấm vào **Site configuration** ➔ **Environment variables** ➔ **Add variable**:
-     * **Key**: `VITE_API_URL`
-     * **Value**: Điền link Backend trên Render ở Phần 1 (Ví dụ: `https://duoc-premier-league-backend.onrender.com`)
+## Kiểm tra sau triển khai
 
-3. Bấm **Deploy Site**.
-4. Netlify sẽ biên dịch và cấp cho bạn một tên miền miễn phí (Ví dụ: `https://duoc-premier-league.netlify.app`).
+Chạy theo báo cáo QA với dữ liệu demo; kiểm tra ba cổng, ký/nộp/duyệt, offline/F5/kết nối lại, vòng bảng→knockout, backup→phục hồi và print preview A4 trên thiết bị mục tiêu. Không dùng fixture/test tự động để ghi vào Firebase giải thật. Việc deploy và kiểm thử cloud cần tài khoản Render/Firebase/Netlify của chủ hệ thống; trong phiên sửa này chỉ kiểm thử local và đọc health backend hiện có.
+# Kích hoạt CI cho demo
 
----
-
-## 🔒 PHẦN 3: TÀI KHOẢN ĐĂNG NHẬP MẶC ĐỊNH
-
-| Vai Trò | Tên Đăng Nhập | Mật Khẩu | Quyền Hạn |
-|---|---|---|---|
-| **Ban Tổ Chức (BTC)** | `admin` | `btc2026` | Quản trị mùa giải, sinh lịch, duyệt kết quả, nạp đội, knockout, backup |
-| **Thư Ký Bàn** | `thuky` | `thuky2026` | Bấm giờ trực tiếp, ghi bàn, rút thẻ, nộp biên bản & ký tên |
-| **Khán Giả** | Không cần tài khoản | — | Xem BXH, kết quả, tỉ số, diễn biến trực tiếp |
-
-*(Bạn có thể đổi mật khẩu bất kỳ lúc nào tại mục Environment Variables trên Render)*.
-
----
-
-## 📦 PHẦN 4: SAO LƯU & AN TOÀN DỮ LIỆU (BACKUP & RESTORE)
-
-- **Tự động sao lưu**: Mỗi khi có thay đổi lớn hoặc reset giải đấu, backend tự động lưu một bản backup trong thư mục `server/storage/backups/`.
-- **Sao lưu thủ công**: BTC có thể bấm nút xuất file backup bất kỳ lúc nào để tải về máy tính file `.json` chứa 100% dữ liệu giải đấu và khôi phục lại chỉ với 1 click.
+Mẫu tại `docs/ci-demo-workflow.yml` chỉ chạy trên nhánh `demo`. Để kích hoạt, dùng GitHub UI hoặc token có quyền `workflow` đưa file vào `.github/workflows/demo-check.yml` trên nhánh demo. Token dùng trong lần push này thiếu quyền đó; các kiểm tra `npm run check` và `npm audit` đã chạy local trước push.

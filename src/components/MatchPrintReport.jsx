@@ -1,3 +1,4 @@
+import { compareEvents } from '../services/tournamentService';
 // src/components/MatchPrintReport.jsx
 import { Printer, ArrowLeft } from 'lucide-react';
 import { formatDateTime, cleanPlayerName } from '../services/tournamentService';
@@ -13,7 +14,7 @@ export default function MatchPrintReport({
     window.print();
   };
 
-  const events = (match.events || []).slice().sort((a, b) => Number(a.minute) - Number(b.minute));
+  const events = (match.events || []).filter(e => !e.cancelled).slice().sort(compareEvents);
   const goalEvents = events.filter((e) => e.type === 'goal');
   const cardEvents = events.filter((e) => e.type === 'card');
 
@@ -57,6 +58,7 @@ export default function MatchPrintReport({
           </div>
         </div>
 
+        <p className="doc-round-name">Mã trận: {match.id} · Phiên bản: {match.version || 0} · {match.status}</p>
         {/* Match General Info Table */}
         <table className="doc-table doc-info-table">
           <tbody>
@@ -64,7 +66,7 @@ export default function MatchPrintReport({
               <td style={{ width: '20%' }}><b>Thời gian:</b></td>
               <td style={{ width: '30%' }}>{formatDateTime(match.date)}</td>
               <td style={{ width: '20%' }}><b>Địa điểm:</b></td>
-              <td style={{ width: '30%' }}>Sân bóng Trường Dược</td>
+              <td style={{ width: '30%' }}>{match.venue || 'Sân bóng Trường Dược'}</td>
             </tr>
             <tr>
               <td><b>Trọng tài chính:</b></td>
@@ -118,7 +120,7 @@ export default function MatchPrintReport({
             ) : (
               goalEvents.map((e, idx) => (
                 <tr key={idx}>
-                  <td className="text-center font-bold">{e.displayMinute || `${e.minute}'`}</td>
+                  <td className="text-center font-bold">{e.phase==='shootout'?'Luân lưu · ':''}{e.displayMinute || `${e.minute}'`}</td>
                   <td>{cleanPlayerName(e.player)}</td>
                   <td>{e.team}</td>
                   <td>
@@ -149,11 +151,11 @@ export default function MatchPrintReport({
             ) : (
               cardEvents.map((e, idx) => (
                 <tr key={idx}>
-                  <td className="text-center font-bold">{e.displayMinute || `${e.minute}'`}</td>
+                  <td className="text-center font-bold">{e.phase==='shootout'?'Luân lưu · ':''}{e.displayMinute || `${e.minute}'`}</td>
                   <td>{cleanPlayerName(e.player)}</td>
                   <td>{e.team}</td>
                   <td className="text-center font-bold">
-                    {e.detail === 'Đỏ' || e.detail === 'red' ? 'THẺ ĐỎ 🟥' : 'THẺ VÀNG 🟨'}
+                    {e.detail === 'Đỏ' || e.detail === 'red' || e.detail === 'direct_red' || e.detail === 'second_yellow_red' ? (e.detail==='second_yellow_red'?'VÀNG THỨ HAI → ĐỎ':'ĐỎ TRỰC TIẾP') : 'THẺ VÀNG'}
                   </td>
                 </tr>
               ))
@@ -220,6 +222,7 @@ export default function MatchPrintReport({
           </div>
         )}
 
+        {match.signatureException && <p className="doc-section-heading">Ngoại lệ chữ ký được BTC xác nhận: {match.signatureException}</p>}
         {/* Signatures Section */}
         <div className="doc-signatures-section">
           <div className="doc-sig-col">

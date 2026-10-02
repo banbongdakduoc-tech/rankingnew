@@ -1,145 +1,52 @@
-// server/config/db.js
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getDatabase } from 'firebase-admin/database';
+import bcrypt from 'bcryptjs';
+import { migrateState } from '../services/migrateState.js';
+import { initialState } from '../services/stateEngine.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const STORAGE_DIR = path.join(__dirname, '../storage');
-const DB_FILE = path.join(STORAGE_DIR, 'dpl_database.json');
-const BACKUP_DIR = path.join(STORAGE_DIR, 'backups');
-
-const DEFAULT_STATE = {
-  tourStatus: 'none',
-  tourConfig: {
-    name: 'Dược Premier League 2026',
-    format: 'group',
-    numGroups: 2,
-    knockoutFormat: 'quarter',
-    halfDuration: 20
-  },
-  groupsData: [],
-  matches: {},
-  players: {},
-  suspensions: {},
-  handledViolations: {},
-  accounts: {}
-};
-
-class Database {
-  constructor() {
-    this.data = { ...DEFAULT_STATE };
-    this.init();
+export class Database {
+  constructor({mode=process.env.DB_MODE || 'firebase',file=process.env.DPL_DB_FILE || 'server/storage/dpl_database.json',data}={}) {
+    this.mode=mode;this.file=path.resolve(file);this.data=initialState(data);this.serial=Promise.resolve();this.listeners=new Set();
   }
-
-  init() {
-    try {
-      if (!fs.existsSync(STORAGE_DIR)) {
-        fs.mkdirSync(STORAGE_DIR, { recursive: true });
-      }
-      if (!fs.existsSync(BACKUP_DIR)) {
-        fs.mkdirSync(BACKUP_DIR, { recursive: true });
-      }
-
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        this.data = { ...DEFAULT_STATE, ...JSON.parse(raw) };
-        console.log('✅ [Database] Đã tải dữ liệu giải đấu thành công từ disk');
-      } else {
-        this.save();
-        console.log('✨ [Database] Đã khởi tạo cơ sở dữ liệu mặc định mới');
-      }
-    } catch (err) {
-      console.error('❌ [Database] Lỗi khi khởi tạo database:', err);
-      this.data = { ...DEFAULT_STATE };
-    }
+  async init() {
+    if(this.mode==='firebase') {
+      if(!process.env.FIREBASE_DATABASE_URL || !process.env.FIREBASE_SERVICE_ACCOUNT_JSON || !process.env.DPL_DATABASE_PATH)throw new Error('Thiếu cấu hình Firebase demo. Cần FIREBASE_DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON và DPL_DATABASE_PATH.');
+      if(!/^environments\/demo(?:[-_a-zA-Z0-9]*)(?:\/|$)/.test(process.env.DPL_DATABASE_PATH))throw new Error('Nhánh demo chỉ được ghi vào environments/demo…; không dùng root của giải thật.');
+      const app=getApps()[0] || initializeApp({credential:cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)),databaseURL:process.env.FIREBASE_DATABASE_URL});
+      this.root=getDatabase(app).ref(process.env.DPL_DATABASE_PATH);
+      const snapshot=await this.root.get();this.data=migrateState(snapshot.val() || {});
+    } else if(this.mode==='file') {
+      if(process.env.NODE_ENV==='production')throw new Error('Không cho phép lưu file trong production.');
+      if(fs.existsSync(this.file))this.data=initialState(JSON.parse(fs.readFileSync(this.file,'utf8')));
+    } else if(this.mode!=='memory')throw new Error('DB_MODE không hợp lệ.');
+    const hashes=new Map();
+    const migrate=raw=>{const next=migrateState(raw);for(const account of Object.values(next.accounts || {})){if(account.password&&!account.passwordHash){if(!hashes.has(account.password))hashes.set(account.password,bcrypt.hashSync(account.password,12));account.passwordHash=hashes.get(account.password);}delete account.password;}return next;};
+    // A transaction preserves writes from other instances during startup migration.
+    await this.mutate(migrate);
+    if(this.root)this.root.on('value',snapshot=>{this.data=initialState(snapshot.val() || {});for(const listener of this.listeners)listener(this.getAll());});
+    return this;
   }
-
-  save() {
-    try {
-      if (!fs.existsSync(STORAGE_DIR)) {
-        fs.mkdirSync(STORAGE_DIR, { recursive: true });
-      }
-      // Ghi nguyên tử bằng file tạm để tránh mất dữ liệu nếu ngắt điện
-      const tempFile = `${DB_FILE}.tmp`;
-      fs.writeFileSync(tempFile, JSON.stringify(this.data, null, 2), 'utf-8');
-      fs.renameSync(tempFile, DB_FILE);
-      return true;
-    } catch (err) {
-      console.error('❌ [Database] Lỗi khi lưu file database:', err);
-      return false;
-    }
+  subscribe(listener){this.listeners.add(listener);return()=>this.listeners.delete(listener);}
+  getAll(){return structuredClone(this.data);}
+  get(key){return structuredClone(this.data[key]);}
+  async persist(data){
+    const clean=JSON.parse(JSON.stringify(data));
+    if(this.root)await this.root.set(clean);
+    if(this.mode==='file'){fs.mkdirSync(path.dirname(this.file),{recursive:true});fs.writeFileSync(`${this.file}.tmp`,JSON.stringify(clean,null,2),{mode:0o600});fs.renameSync(`${this.file}.tmp`,this.file);}
+    this.data=clean;
   }
-
-  createBackup() {
-    try {
-      if (!fs.existsSync(BACKUP_DIR)) {
-        fs.mkdirSync(BACKUP_DIR, { recursive: true });
-      }
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupFile = path.join(BACKUP_DIR, `dpl_backup_${timestamp}.json`);
-      fs.writeFileSync(backupFile, JSON.stringify(this.data, null, 2), 'utf-8');
-      console.log(`📦 [Database] Đã tạo bản sao lưu an toàn: ${backupFile}`);
-      return backupFile;
-    } catch (err) {
-      console.error('❌ [Database] Lỗi khi tạo bản sao lưu:', err);
-      return null;
-    }
-  }
-
-  getAll() {
-    return this.data;
-  }
-
-  get(key) {
-    return this.data[key];
-  }
-
-  set(key, val) {
-    this.data[key] = val;
-    this.save();
-    return this.data[key];
-  }
-
-  updateMulti(updates = {}) {
-    Object.keys(updates).forEach((pathKey) => {
-      const parts = pathKey.split('/');
-      if (parts.length === 1) {
-        if (updates[pathKey] === null) {
-          delete this.data[parts[0]];
-        } else {
-          this.data[parts[0]] = updates[pathKey];
-        }
-      } else if (parts.length === 2) {
-        const [parent, child] = parts;
-        if (!this.data[parent] || typeof this.data[parent] !== 'object') {
-          this.data[parent] = {};
-        }
-        if (updates[pathKey] === null) {
-          delete this.data[parent][child];
-        } else {
-          this.data[parent][child] = updates[pathKey];
-        }
-      }
-    });
-    this.save();
-    return this.data;
-  }
-
-  reset() {
-    this.createBackup();
-    this.data = { ...DEFAULT_STATE };
-    this.save();
-    return this.data;
-  }
-
-  importData(importedData) {
-    this.createBackup();
-    this.data = { ...DEFAULT_STATE, ...importedData };
-    this.save();
-    return this.data;
+  mutate(transform){
+    const work=async()=>{
+      if(this.root){
+        let domainError;
+        const result=await this.root.transaction(raw=>{domainError=undefined;try{return JSON.parse(JSON.stringify(transform(initialState(raw || {}))));}catch(e){domainError=e;return; }},undefined,false);
+        if(domainError)throw domainError;if(!result.committed)throw new Error('Không thể lưu dữ liệu.');this.data=initialState(result.snapshot.val());
+      } else {const next=transform(this.getAll());await this.persist(next);}
+      return this.getAll();
+    };
+    const result=this.serial.then(work);this.serial=result.catch(()=>{});return result;
   }
 }
-
-export const db = new Database();
+export const db=new Database();

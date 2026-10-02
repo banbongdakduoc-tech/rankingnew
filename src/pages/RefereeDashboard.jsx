@@ -1,7 +1,10 @@
+import { askText } from '../services/promptService';
 // src/pages/RefereeDashboard.jsx
 import { useState, useEffect, useRef } from 'react';
-import { ref, onValue, update, set } from 'firebase/database';
-import { db } from '../services/firebase';
+import { ref, onValue, update } from '../services/dataService';
+import { db, syncSnapshot, sendCommand } from '../services/dataService';
+import { readDraft, saveDraft, clearDraft } from '../services/drafts';
+import ShootoutPanel from '../components/ShootoutPanel';
 import {
   FileText,
   Search,
@@ -34,11 +37,13 @@ import {
   cleanPlayerName,
   calculateEventsGoals,
   formatMatchMinute,
-  formatSecondsToMMSS
+  formatSecondsToMMSS, parseMatchMinute, compareEvents, mergeMatchDraft, elapsedClock, normalizeKickoff, kickoffInput
 } from '../services/tournamentService';
 
 export default function RefereeDashboard() {
   const toast = useToast();
+  const [savedDraft] = useState(() => readDraft());
+  const [clock, setClock] = useState(() => savedDraft?.clock || { elapsed: 0, running: false, period: 1 });
   const [innerTab, setInnerTab] = useState('bienban'); // 'bienban' | 'thongtin'
 
   // ==========================================
@@ -52,59 +57,64 @@ export default function RefereeDashboard() {
   const [printingMatch, setPrintingMatch] = useState(null);
 
   useEffect(() => {
-    onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
-    onValue(ref(db, 'tourConfig'), (snap) => {
+    const unsubscribe0 = onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
+    const unsubscribe1 = onValue(ref(db, 'tourConfig'), (snap) => {
       if (snap.exists()) setTourConfig(snap.val());
     });
-    onValue(ref(db, 'matches'), (snap) => {
+    const unsubscribe2 = onValue(ref(db, 'matches'), (snap) => {
       const data = snap.val();
       setAllMatches(data ? Object.keys(data).map((k) => ({ id: k, ...data[k] })) : []);
     });
-    onValue(ref(db, 'players'), (snap) => setAllPlayers(snap.val() || {}));
-    onValue(ref(db, 'suspensions'), (snap) => setSuspensions(snap.val() || {}));
-  }, []);
+    const unsubscribe3 = onValue(ref(db, 'players'), (snap) => setAllPlayers(snap.val() || {}));
+    const unsubscribe4 = onValue(ref(db, 'suspensions'), (snap) => setSuspensions(snap.val() || {}));
+
+    return () => { unsubscribe0(); unsubscribe1(); unsubscribe2(); unsubscribe3(); unsubscribe4(); };
+}, []);
 
   // ==========================================
   // 2. STATE QUY TRÌNH LẬP BIÊN BẢN (5 BƯỚC)
   // ==========================================
-  const [step, setStep] = useState(1);
-  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [step, setStep] = useState(savedDraft?.step || 1);
+  const [selectedMatch, setSelectedMatch] = useState(savedDraft?.selectedMatch || null);
 
   // Step 2 Info
-  const [matchDate, setMatchDate] = useState('');
-  const [refereeName, setRefereeName] = useState('');
-  const [secretaryName, setSecretaryName] = useState('');
+  const [matchDate, setMatchDate] = useState(kickoffInput(savedDraft?.matchDate));
+  const [refereeName, setRefereeName] = useState(savedDraft?.refereeName ?? '');
+  const [secretaryName, setSecretaryName] = useState(savedDraft?.secretaryName ?? '');
 
   // Step 3 Lineups
-  const [lineupA, setLineupA] = useState([]);
-  const [lineupB, setLineupB] = useState([]);
+  const [lineupA, setLineupA] = useState(savedDraft?.lineupA ?? []);
+  const [lineupB, setLineupB] = useState(savedDraft?.lineupB ?? []);
   const [quickAddA, setQuickAddA] = useState({ num: '', name: '', shirtName: '' });
   const [quickAddB, setQuickAddB] = useState({ num: '', name: '', shirtName: '' });
 
   // Step 4 Live Events, Score & Realtime Timer
-  const [events, setEvents] = useState([]);
-  const [penA, setPenA] = useState('');
-  const [penB, setPenB] = useState('');
+  const [events, setEvents] = useState(savedDraft?.events ?? []);
+  const [penA, setPenA] = useState(savedDraft?.penA ?? '');
+  const [penB, setPenB] = useState(savedDraft?.penB ?? '');
 
   // Realtime Timer Clock States
   const halfDuration = Number(tourConfig.halfDuration) || 20; // Số phút 1 hiệp do BTC set
-  const [timerSeconds, setTimerSeconds] = useState(0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [matchPeriod, setMatchPeriod] = useState(1); // 1: Hiệp 1, 0: Nghỉ giữa hiệp, 2: Hiệp 2
+  const [timerSeconds, setTimerSeconds] = useState(() => elapsedClock(savedDraft?.clock || {}));
+  const [isTimerRunning, setIsTimerRunning] = useState(savedDraft?.clock?.running || false);
+  const [matchPeriod, setMatchPeriod] = useState(savedDraft?.clock?.period ?? 1); // 1: Hiệp 1, 0: Nghỉ giữa hiệp, 2: Hiệp 2
 
   // Event Input Form
   const [eventType, setEventType] = useState('goal'); // 'goal' | 'card'
+  const [evPhase, setEvPhase] = useState('play');
   const [evDetail, setEvDetail] = useState('normal'); // 'normal', 'own', 'pen', 'Vàng', 'Đỏ'
   const [evTeam, setEvTeam] = useState('');
   const [evPlayer, setEvPlayer] = useState('');
   const [customMin, setCustomMin] = useState(''); // Có thể để trống để auto lấy theo đồng hồ
 
   // Step 5 Signatures & Notes
-  const [secretaryNote, setSecretaryNote] = useState('');
+  const [secretaryNote, setSecretaryNote] = useState(savedDraft?.secretaryNote ?? '');
   const sigRefA = useRef(null);
   const sigRefB = useRef(null);
   const sigRefReferee = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const eventSaving = useRef(false);
+  const [savingEvent, setSavingEvent] = useState(false);
 
   // Filters for Schedule & Directory
   const [scheduleFilter, setScheduleFilter] = useState('');
@@ -116,26 +126,44 @@ export default function RefereeDashboard() {
   // 3. REALTIME TIMER ENGINE
   // ==========================================
   useEffect(() => {
-    let interval = null;
-    if (isTimerRunning && step === 4) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isTimerRunning, step]);
+    const interval = setInterval(() => setTimerSeconds(elapsedClock(clock)), 500);
+    return () => clearInterval(interval);
+  }, [clock]);
+  useEffect(() => {
+    if (!selectedMatch) return;
+    try { saveDraft({ selectedMatch, step, matchDate, refereeName, secretaryName, lineupA, lineupB, events, penA, penB, secretaryNote, clock }); }
+    catch { toast.error('Không lưu được nháp trên máy. Kiểm tra dung lượng trước khi tiếp tục.'); }
+  }, [selectedMatch, step, matchDate, refereeName, secretaryName, lineupA, lineupB, events, penA, penB, secretaryNote, clock, toast]);
+  useEffect(() => {
+    if (!selectedMatch?.id) return;
+    return onValue(ref(db, `matches/${selectedMatch.id}`), snap => {
+      const current = snap.val();
+      if (!current) return;
+      if (syncSnapshot().pending || syncSnapshot().conflicts.length) return;
+      setSelectedMatch(previous => mergeMatchDraft(previous,current));
+      setEvents((current.events || []).filter(e => !e.cancelled));
+      setPenA(current.penA ?? ''); setPenB(current.penB ?? '');
+      if (current.clock) { setClock(current.clock); setMatchPeriod(current.clock.period); setIsTimerRunning(current.clock.running); }
+    });
+  }, [selectedMatch?.id]);
+  const persistClock = async (next) => {
+    try {
+
+    setClock(next); setMatchPeriod(next.period); setIsTimerRunning(next.running); setTimerSeconds(elapsedClock(next));
+    await update(ref(db, `matches/${selectedMatch.id}`), { clock: next });
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // Phút thi đấu hiện tại theo đồng hồ (có tính bù giờ +)
-  const currentMatchTimeInfo = formatMatchMinute(timerSeconds, halfDuration, matchPeriod === 2 ? 2 : 1);
+  const currentMatchTimeInfo = formatMatchMinute(timerSeconds, halfDuration, matchPeriod || 1, Number(tourConfig.extraTimeMinutes || 0));
 
   // ==========================================
   // 4. LOGIC XỬ LÝ QUY TRÌNH
   // ==========================================
   const handleSelectMatch = (match) => {
     setSelectedMatch(match);
-    setMatchDate(match.date || '');
+    setMatchDate(kickoffInput(match.date));
     setRefereeName(match.ref || '');
     setSecretaryName(match.sec || '');
 
@@ -153,7 +181,9 @@ export default function RefereeDashboard() {
         : teamBPlayers.map((p) => ({ ...p, played: false }))
     );
 
-    setEvents(match.events || []);
+    setEvents((match.events || []).filter(e => !e.cancelled));
+    const restoredClock = match.clock || { elapsed: 0, running: false, period: 1 };
+    setClock(restoredClock); setTimerSeconds(elapsedClock(restoredClock)); setMatchPeriod(restoredClock.period); setIsTimerRunning(restoredClock.running);
     setPenA(match.penA ?? '');
     setPenB(match.penB ?? '');
     setSecretaryNote(match.secretaryNote || '');
@@ -161,7 +191,7 @@ export default function RefereeDashboard() {
     // Nếu trận đang LIVE hoặc bị từ chối -> nhảy ngay đến bước 4 để tiếp tục
     if (match.status === 'Đang LIVE' || match.status === 'Bị từ chối') {
       setStep(4);
-      setIsTimerRunning(true);
+      setIsTimerRunning(restoredClock.running);
     } else {
       setStep(2);
       setTimerSeconds(0);
@@ -178,21 +208,25 @@ export default function RefereeDashboard() {
     }
   };
 
-  const handleConfirmMatchInfo = () => {
+  const handleConfirmMatchInfo = async () => {
+    try {
+
     if (!matchDate || !refereeName || !secretaryName) {
       toast.warning('Vui lòng điền đầy đủ Ngày giờ, Tên Trọng tài và Thư ký!');
       return;
     }
 
-    update(ref(db, `matches/${selectedMatch.id}`), {
-      date: matchDate,
+    await update(ref(db, `matches/${selectedMatch.id}`), {
+      date: normalizeKickoff(matchDate),
       ref: refereeName,
       sec: secretaryName
     });
 
     toast.success('Đã lưu thông tin trận đấu!');
     setStep(3);
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   const togglePlayerAttendance = (side, index) => {
     if (side === 'A') {
@@ -207,45 +241,11 @@ export default function RefereeDashboard() {
   };
 
   // Thêm nhanh cầu thủ vào đội hình tại Bước 3
-  const handleQuickAddPlayer = (side) => {
-    const isA = side === 'A';
-    const form = isA ? quickAddA : quickAddB;
-    const teamName = isA ? selectedMatch.home : selectedMatch.away;
+  const handleQuickAddPlayer = () => toast.warning('Cầu thủ mới cần BTC kiểm tra và bổ sung vào danh sách chính thức.');
 
-    if (!form.num || !form.name) {
-      toast.warning('Vui lòng nhập Số áo và Tên thật của cầu thủ!');
-      return;
-    }
+  const handleStartMatch = async () => {
+    try {
 
-    const newP = {
-      team: teamName,
-      num: form.num,
-      name: form.name.trim(),
-      shirtName: form.shirtName ? form.shirtName.trim() : form.name.trim(),
-      avatar: '',
-      played: true
-    };
-
-    if (isA) {
-      const updatedLineup = [...lineupA, newP];
-      setLineupA(updatedLineup);
-      setQuickAddA({ num: '', name: '', shirtName: '' });
-      // Lưu vào Firebase players để dùng cho sau này
-      const currentTeamP = allPlayers[teamName] || [];
-      set(ref(db, `players/${teamName}`), [...currentTeamP, newP]);
-    } else {
-      const updatedLineup = [...lineupB, newP];
-      setLineupB(updatedLineup);
-      setQuickAddB({ num: '', name: '', shirtName: '' });
-      // Lưu vào Firebase players để dùng cho sau này
-      const currentTeamP = allPlayers[teamName] || [];
-      set(ref(db, `players/${teamName}`), [...currentTeamP, newP]);
-    }
-
-    toast.success(`Đã thêm nhanh cầu thủ #${newP.num} - ${newP.name} vào đội ${teamName}`);
-  };
-
-  const handleStartMatch = () => {
     const hasPlayerA = lineupA.some((p) => p.played);
     const hasPlayerB = lineupB.some((p) => p.played);
 
@@ -255,12 +255,14 @@ export default function RefereeDashboard() {
       }
     }
 
-    update(ref(db, `matches/${selectedMatch.id}`), {
+    await update(ref(db, `matches/${selectedMatch.id}`), {
       status: 'Đang LIVE',
       lineupA,
-      lineupB
+      lineupB,
+      clock: { elapsed: 0, running: true, startedAt: Date.now(), period: 1 }
     });
 
+    setClock({ elapsed: 0, running: true, startedAt: Date.now(), period: 1 });
     // Bắt đầu bấm giờ realtime
     setTimerSeconds(0);
     setIsTimerRunning(true);
@@ -268,80 +270,64 @@ export default function RefereeDashboard() {
 
     toast.info('Trận đấu đã chính thức bắt đầu (Hiệp 1)! Đồng hồ đang chạy realtime.');
     setStep(4);
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // Đồng hồ: Tạm dừng / Tiếp tục
-  const handleToggleTimer = () => {
-    setIsTimerRunning(!isTimerRunning);
-    toast.info(isTimerRunning ? '⏸️ Đã tạm dừng đồng hồ trận đấu' : '▶️ Tiếp tục bấm giờ');
-  };
+  const handleToggleTimer = async () => {
+    try {
 
-  // Đồng hồ: Kết thúc Hiệp 1 -> Nghỉ giữa trận
-  const handleEndFirstHalf = () => {
-    setIsTimerRunning(false);
-    setMatchPeriod(0); // Nghỉ giữa trận
-    const halfSec = halfDuration * 60;
-    if (timerSeconds < halfSec) {
-      setTimerSeconds(halfSec);
-    }
-    toast.info('☕ Đã kết thúc Hiệp 1 - Chuyển sang Nghỉ giữa trận!');
-  };
+    await persistClock({ elapsed: elapsedClock(clock), startedAt: Date.now(), running: !clock.running, period: clock.period });
+    toast.info(clock.running ? 'Đã tạm dừng đồng hồ' : 'Đồng hồ tiếp tục chạy');
 
-  // Đồng hồ: Bắt đầu Hiệp 2
-  const handleStartSecondHalf = () => {
-    setMatchPeriod(2);
-    setTimerSeconds(halfDuration * 60);
-    setIsTimerRunning(true);
-    toast.success('▶️ Bắt đầu Hiệp 2! Đồng hồ tiếp tục bấm giờ.');
-  };
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+  const handleEndFirstHalf = async () => {
+    try {
+ await persistClock({ elapsed: elapsedClock(clock), startedAt: Date.now(), running: false, period: 0 });
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+  const handleStartSecondHalf = async () => {
+    try {
+ await persistClock({ elapsed: halfDuration * 60, startedAt: Date.now(), running: true, period: 2 });
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+  const handleResetTimer = async () => {
+    try {
 
-  // Đặt lại thời gian thủ công
-  const handleResetTimer = () => {
-    const minStr = window.prompt(`Nhập số phút bạn muốn chỉnh đồng hồ (1 - ${halfDuration * 2}):`, Math.floor(timerSeconds / 60));
-    if (minStr !== null) {
-      const m = Math.max(0, parseInt(minStr) || 0);
-      setTimerSeconds(m * 60);
-      if (m >= halfDuration) setMatchPeriod(2);
-      else setMatchPeriod(1);
-      toast.info(`Đã đặt lại đồng hồ về phút ${m}`);
-    }
-  };
+    const value = await askText('Chỉnh phút (ví dụ 12, 20+2, 40+1). Chọn đúng hiệp hiện tại:', currentMatchTimeInfo.displayMinute);
+    if (value === null) return;
+    const parsed = parseMatchMinute(value, matchPeriod || 1);
+    await persistClock({ elapsed: (parsed.minute + parsed.addedMinute) * 60, startedAt: Date.now(), running: clock.running, period: matchPeriod || 1 });
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // ==========================================
   // THÊM SỰ KIỆN: NHẢY SỐ LIỀN 0ms DELAY
   // ==========================================
-  const handleAddEvent = () => {
+  const handleAddEvent = async () => {
+    if (eventSaving.current) return;
+    eventSaving.current = true; setSavingEvent(true);
+    try {
+
     if (!evTeam || !evPlayer) {
       toast.warning('Vui lòng chọn Đội và Cầu thủ!');
       return;
     }
 
-    // Xác định số phút (tự động lấy theo đồng hồ realtime nếu không gõ tay)
-    let finalMinuteNum = currentMatchTimeInfo.minuteNum;
-    let finalDisplayMinute = currentMatchTimeInfo.displayMinute;
-
-    if (customMin?.trim()) {
-      const parsed = parseInt(customMin);
-      if (!isNaN(parsed) && parsed > 0) {
-        finalMinuteNum = parsed;
-        finalDisplayMinute = customMin.includes('+') || customMin.includes("'") ? customMin : `${parsed}'`;
-      }
-    }
-
-    const newEv = {
-      id: Date.now(),
-      type: eventType,
-      detail: evDetail,
-      team: evTeam,
-      player: evPlayer,
-      minute: finalMinuteNum,
-      displayMinute: finalDisplayMinute
-    };
-
-    const newEvents = [...events, newEv].sort((a, b) => a.minute - b.minute);
+    const parsed = customMin?.trim() ? parseMatchMinute(customMin, matchPeriod || 1) : parseMatchMinute(currentMatchTimeInfo.displayMinute, matchPeriod || 1);
+    const player = (allPlayers[evTeam] || []).find(p => `${p.num} - ${p.name}` === evPlayer);
+    if (!player) throw new Error('Không tìm thấy cầu thủ.');
+    const newEv = { id: crypto.randomUUID(), type: eventType, detail: evDetail, phase:eventType==='card'?evPhase:'play', team: evTeam, player: evPlayer, playerId: player.id, ...parsed, sequence: Date.now() };
+    const finalDisplayMinute = parsed.displayMinute;
+    const newEvents = [...events, newEv].sort(compareEvents);
 
     // Tính toán ngay tỉ số chuẩn
     const { goalsA, goalsB } = calculateEventsGoals(newEvents, selectedMatch.home, selectedMatch.away);
+
+    const result = await sendCommand({ kind: 'events', matchId: selectedMatch.id, baseVersion: selectedMatch.version || 0, add: [newEv], remove: [] }, { offline: true });
 
     // Cập nhật State cục bộ NGAY LẬP TỨC (0ms latency - nhảy số liền!)
     setEvents(newEvents);
@@ -353,71 +339,58 @@ export default function RefereeDashboard() {
     }));
 
     // Đồng bộ lên Firebase Realtime Database
-    update(ref(db, `matches/${selectedMatch.id}`), {
-      events: newEvents,
-      scoreA: goalsA,
-      scoreB: goalsB
-    });
 
-    toast.success(`⚽ Đã ghi nhận sự kiện phút ${finalDisplayMinute}! Tỉ số cập nhật: ${goalsA} - ${goalsB}`);
+    toast.success(result.queued ? 'Đã lưu sự kiện trên máy · Chờ đồng bộ' : `Đã xác nhận sự kiện ${finalDisplayMinute} · ${goalsA}–${goalsB}`);
 
     // Reset form
+    setEvPhase('play');
     setEventType('goal');
     setEvDetail('normal');
     setEvTeam('');
     setEvPlayer('');
     setCustomMin('');
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); } finally { eventSaving.current = false; setSavingEvent(false); }
+};
+
+  const handleRemoveEvent = async (id) => {
+    try {
+
+    const reason = await askText('Lý do hủy sự kiện:', 'Ghi nhầm');
+    if (!reason?.trim()) return;
+    const result = await sendCommand({ kind: 'events', matchId: selectedMatch.id, baseVersion: selectedMatch.version || 0, add: [], remove: [id], reason }, { offline: true });
+    const next = events.filter(e => e.id !== id), score = calculateEventsGoals(next, selectedMatch.home, selectedMatch.away);
+    setEvents(next); setSelectedMatch(prev => ({ ...prev, events: next, scoreA: score.goalsA, scoreB: score.goalsB }));
+    toast.info(result.queued ? 'Đã lưu yêu cầu hủy trên máy' : 'Đã hủy sự kiện và cập nhật tỷ số');
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
+
+  const startExtraPeriod = async period => {
+    if(!window.confirm(`Bắt đầu hiệp phụ ${period===3?1:2}?`))return;
+    await persistClock({elapsed:(halfDuration*2+(period===4?Number(tourConfig.extraTimeMinutes):0))*60,running:true,period,startedAt:Date.now()});
   };
+  const handleEndMatch = async () => {
+    try {
 
-  const handleRemoveEvent = (id) => {
-    const newEvents = events.filter((e) => e.id !== id);
-    const { goalsA, goalsB } = calculateEventsGoals(newEvents, selectedMatch.home, selectedMatch.away);
-
-    setEvents(newEvents);
-    setSelectedMatch((prev) => ({
-      ...prev,
-      events: newEvents,
-      scoreA: goalsA,
-      scoreB: goalsB
-    }));
-
-    update(ref(db, `matches/${selectedMatch.id}`), {
-      events: newEvents,
-      scoreA: goalsA,
-      scoreB: goalsB
-    });
-
-    toast.info(`Đã xóa sự kiện. Tỉ số cập nhật: ${goalsA} - ${goalsB}`);
-  };
-
-  const handleUpdatePenalty = (side, val) => {
-    const cleanVal = val === '' ? '' : Math.max(0, parseInt(val) || 0);
-    if (side === 'A') {
-      setPenA(cleanVal);
-      setSelectedMatch((prev) => ({ ...prev, penA: cleanVal }));
-      update(ref(db, `matches/${selectedMatch.id}`), { penA: cleanVal });
-    } else {
-      setPenB(cleanVal);
-      setSelectedMatch((prev) => ({ ...prev, penB: cleanVal }));
-      update(ref(db, `matches/${selectedMatch.id}`), { penB: cleanVal });
-    }
-  };
-
-  const handleEndMatch = () => {
     if (window.confirm('Xác nhận KẾT THÚC TRẬN ĐẤU? Hệ thống sẽ chuyển sang phần kiểm tra biên bản và ký tên điện tử.')) {
-      setIsTimerRunning(false);
+      await persistClock({ elapsed: elapsedClock(clock), running: false, period: matchPeriod, startedAt: Date.now() });
       setStep(5);
     }
-  };
+
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+};
 
   // Nộp biên bản Bước 5
   const handleSubmitReport = async () => {
+    if (syncSnapshot().pending || syncSnapshot().conflicts.length) { toast.warning('Gửi hết thao tác nháp và giải quyết xung đột trước khi nộp.'); return; }
     setIsSubmitting(true);
     try {
       const sigA = sigRefA.current ? sigRefA.current.getDataUrl() : '';
       const sigB = sigRefB.current ? sigRefB.current.getDataUrl() : '';
       const sigRef = sigRefReferee.current ? sigRefReferee.current.getDataUrl() : '';
 
+      if (![sigA, sigB, sigRef].every(Boolean)) throw new Error('Cần đủ chữ ký hai đội trưởng và trọng tài trước khi nộp.');
       const signatures = {
         home: sigA || selectedMatch.signatures?.home || '',
         away: sigB || selectedMatch.signatures?.away || '',
@@ -428,16 +401,17 @@ export default function RefereeDashboard() {
       await update(ref(db, `matches/${selectedMatch.id}`), {
         status: 'Chờ duyệt',
         signatures,
+        lineupA, lineupB,
         secretaryNote: secretaryNote.trim(),
         rejectReason: ''
       });
 
       toast.success('✅ Đã nộp Biên bản thành công! Đang chờ Ban Tổ Chức duyệt.');
-      setSelectedMatch(null);
+      setSelectedMatch(null); clearDraft();
       setStep(1);
     } catch (err) {
       console.error(err);
-      toast.error('Có lỗi xảy ra khi nộp biên bản!');
+      toast.error(err.message || 'Có lỗi xảy ra khi nộp biên bản!');
     }
     setIsSubmitting(false);
   };
@@ -447,6 +421,7 @@ export default function RefereeDashboard() {
   // ==========================================
   const uniqueGroups = [...new Set(allMatches.map((m) => m.group))];
   const filteredMatches = allMatches
+    .filter(m => m.assignedSecretary === JSON.parse(localStorage.getItem('dpl_user') || '{}').username || JSON.parse(localStorage.getItem('dpl_user') || '{}').role === 'admin')
     .filter((m) => !scheduleFilter || m.group === scheduleFilter)
     .filter((m) => !searchScheduleTxt || m.home?.toLowerCase().includes(searchScheduleTxt.toLowerCase()) || m.away?.toLowerCase().includes(searchScheduleTxt.toLowerCase()));
 
@@ -817,7 +792,8 @@ export default function RefereeDashboard() {
                         ) : (
                           lineupA.map((p, i) => {
                             const pKey = `${selectedMatch.home}@@${p.num} - ${p.name}`;
-                            const isBanned = !!suspensions[pKey];
+                            const ban = suspensions[`${p.team}@@${p.id}`] || suspensions[pKey];
+                            const isBanned = !!ban && ban.remainingMatches !== 0;
 
                             return (
                               <tr key={i} style={{ opacity: isBanned ? 0.45 : 1 }}>
@@ -911,7 +887,8 @@ export default function RefereeDashboard() {
                         ) : (
                           lineupB.map((p, i) => {
                             const pKey = `${selectedMatch.away}@@${p.num} - ${p.name}`;
-                            const isBanned = !!suspensions[pKey];
+                            const ban = suspensions[`${p.team}@@${p.id}`] || suspensions[pKey];
+                            const isBanned = !!ban && ban.remainingMatches !== 0;
 
                             return (
                               <tr key={i} style={{ opacity: isBanned ? 0.45 : 1 }}>
@@ -1002,7 +979,7 @@ export default function RefereeDashboard() {
                   <span>Bước 4: Ghi Nhận Sự Kiện Trực Tiếp (Realtime Live)</span>
                 </div>
                 <div className="live-tag">
-                  <span className="live-dot pulse"></span> LIVE ({matchPeriod === 1 ? 'Hiệp 1' : matchPeriod === 2 ? 'Hiệp 2' : 'Nghỉ Giữa Trận'})
+                  <span className="live-dot pulse"></span> LIVE ({matchPeriod >= 3 ? `Hiệp phụ ${matchPeriod-2}` : matchPeriod === 1 ? 'Hiệp 1' : matchPeriod === 2 ? 'Hiệp 2' : 'Nghỉ Giữa Trận'})
                 </div>
               </div>
 
@@ -1016,7 +993,7 @@ export default function RefereeDashboard() {
                     </div>
                     <div>
                       <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>
-                        Đồng hồ bấm giờ {matchPeriod === 1 ? 'Hiệp 1' : matchPeriod === 2 ? 'Hiệp 2' : 'Nghỉ giữa hiệp'} (Thời lượng: {halfDuration}'/hiệp)
+                        Đồng hồ bấm giờ {matchPeriod >= 3 ? `Hiệp phụ ${matchPeriod-2}` : matchPeriod === 1 ? 'Hiệp 1' : matchPeriod === 2 ? 'Hiệp 2' : 'Nghỉ giữa hiệp'} (Thời lượng: {halfDuration}'/hiệp)
                       </div>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
                         <span style={{ fontSize: '32px', fontFamily: 'var(--font-display)', fontWeight: '900', color: 'var(--accent-green)', letterSpacing: '0.05em' }}>
@@ -1090,35 +1067,11 @@ export default function RefereeDashboard() {
                   </div>
                 </div>
 
-                {/* Luân lưu nếu là Knock-out */}
-                {selectedMatch.group === 'Vòng Knock-out' && (
-                  <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', border: '1px dashed var(--accent-gold)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-                    <span className="text-gold font-bold" style={{ fontSize: '13px' }}>
-                      Tỉ số Luân lưu (Pen nếu hòa):
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        className="input-dark"
-                        style={{ width: '65px', textAlign: 'center', fontSize: '16px', fontWeight: 'bold' }}
-                        placeholder="Pen A"
-                        value={penA}
-                        onChange={(e) => handleUpdatePenalty('A', e.target.value)}
-                      />
-                      <span style={{ fontWeight: 'bold' }}>-</span>
-                      <input
-                        type="number"
-                        min="0"
-                        className="input-dark"
-                        style={{ width: '65px', textAlign: 'center', fontSize: '16px', fontWeight: 'bold' }}
-                        placeholder="Pen B"
-                        value={penB}
-                        onChange={(e) => handleUpdatePenalty('B', e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
+                {selectedMatch.group === 'Vòng Knock-out' && selectedMatch.scoreA === selectedMatch.scoreB && <ShootoutPanel match={{ ...selectedMatch, lineupA, lineupB }} players={allPlayers} rounds={tourConfig.shootoutRounds || 5} onChange={async kicks => {
+    try {
+ await update(ref(db, `matches/${selectedMatch.id}`), { shootout: kicks }); setSelectedMatch(prev => ({ ...prev, shootout: kicks }));
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+}}/>}
               </div>
 
               {/* Form Thêm Sự Kiện (Tự Động Điền Phút Đồng Hồ) */}
@@ -1167,7 +1120,7 @@ export default function RefereeDashboard() {
                         onChange={(e) => setEvDetail(e.target.value)}
                       >
                         <option value="Vàng">Thẻ Vàng 🟨</option>
-                        <option value="Đỏ">Thẻ Đỏ 🟥</option>
+                        <option value="second_yellow_red">Vàng thứ hai / Truất quyền thi đấu</option><option value="Đỏ">Thẻ Đỏ 🟥</option>
                       </select>
                     )}
                   </div>
@@ -1198,13 +1151,13 @@ export default function RefereeDashboard() {
                     >
                       <option value="">-- Chọn Cầu thủ --</option>
                       {evTeam === selectedMatch.home &&
-                        lineupA.map((p) => (
+                        lineupA.filter(p => eventType === 'card' || p.played).map((p) => (
                           <option key={p.num} value={`${p.num} - ${p.name}`}>
                             #{p.num} - {p.name} {p.shirtName ? `(${p.shirtName})` : ''}
                           </option>
                         ))}
                       {evTeam === selectedMatch.away &&
-                        lineupB.map((p) => (
+                        lineupB.filter(p => eventType === 'card' || p.played).map((p) => (
                           <option key={p.num} value={`${p.num} - ${p.name}`}>
                             #{p.num} - {p.name} {p.shirtName ? `(${p.shirtName})` : ''}
                           </option>
@@ -1225,8 +1178,10 @@ export default function RefereeDashboard() {
                 </div>
 
                 <div className="text-right">
-                  <button type="button" className="btn green" onClick={handleAddEvent}>
-                    <Plus size={16} /> Lưu Sự Kiện (Nhảy Số Ngay)
+                  {selectedMatch.group==='Vòng Knock-out'&&selectedMatch.scoreA===selectedMatch.scoreB&&Number(tourConfig.extraTimeMinutes)>0&&[2,3].includes(matchPeriod)&&<button className="btn warning" onClick={()=>startExtraPeriod(matchPeriod+1)}>Bắt đầu hiệp phụ {matchPeriod===2?1:2} · {tourConfig.extraTimeMinutes} phút</button>}
+                  {eventType==='card'&&selectedMatch.group==='Vòng Knock-out'&&selectedMatch.scoreA===selectedMatch.scoreB&&<label className="form-label">Giai đoạn thẻ<select className="select-dark" value={evPhase} onChange={e=>setEvPhase(e.target.value)}><option value="play">Trong trận</option><option value="shootout">Trong loạt luân lưu (vàng tách riêng)</option></select></label>}
+                  <button type="button" className="btn green" onClick={handleAddEvent} disabled={savingEvent}>
+                    <Plus size={16} /> Lưu sự kiện & đồng bộ
                   </button>
                 </div>
               </div>
@@ -1270,7 +1225,7 @@ export default function RefereeDashboard() {
                                 <span className="badge badge-ghost">Penalty</span>
                               ) : e.detail === 'Vàng' || e.detail === 'yellow' ? (
                                 <span className="badge" style={{ background: 'var(--accent-gold)', color: '#000' }}>Thẻ Vàng 🟨</span>
-                              ) : e.detail === 'Đỏ' || e.detail === 'red' ? (
+                              ) : e.detail === 'Đỏ' || e.detail === 'red' || e.detail === 'direct_red' || e.detail === 'second_yellow_red' ? (
                                 <span className="badge" style={{ background: 'var(--accent-red)', color: '#fff' }}>Thẻ Đỏ 🟥</span>
                               ) : (
                                 'Bàn thắng thường'
@@ -1400,6 +1355,7 @@ export default function RefereeDashboard() {
                   ref={sigRefA}
                   label={`Đội trưởng ${selectedMatch.home}`}
                   initialDataUrl={selectedMatch.signatures?.home || ''}
+                  onChange={value => setSelectedMatch(prev => ({ ...prev, signatures: { ...prev.signatures, home: value } }))}
                   width={280}
                   height={130}
                 />
@@ -1408,6 +1364,7 @@ export default function RefereeDashboard() {
                   ref={sigRefB}
                   label={`Đội trưởng ${selectedMatch.away}`}
                   initialDataUrl={selectedMatch.signatures?.away || ''}
+                  onChange={value => setSelectedMatch(prev => ({ ...prev, signatures: { ...prev.signatures, away: value } }))}
                   width={280}
                   height={130}
                 />
@@ -1416,6 +1373,7 @@ export default function RefereeDashboard() {
                   ref={sigRefReferee}
                   label="Trọng tài chính"
                   initialDataUrl={selectedMatch.signatures?.referee || ''}
+                  onChange={value => setSelectedMatch(prev => ({ ...prev, signatures: { ...prev.signatures, referee: value } }))}
                   width={280}
                   height={130}
                 />
@@ -1440,7 +1398,7 @@ export default function RefereeDashboard() {
                       const { goalsA, goalsB } = calculateEventsGoals(events, selectedMatch.home, selectedMatch.away);
                       setPrintingMatch({
                         ...selectedMatch,
-                        date: matchDate,
+                        date: normalizeKickoff(matchDate),
                         ref: refereeName,
                         sec: secretaryName,
                         lineupA,
@@ -1452,9 +1410,9 @@ export default function RefereeDashboard() {
                         penB,
                         secretaryNote,
                         signatures: {
-                          home: sigRefA.current?.toDataURL() || selectedMatch.signatures?.home || '',
-                          away: sigRefB.current?.toDataURL() || selectedMatch.signatures?.away || '',
-                          referee: sigRefReferee.current?.toDataURL() || selectedMatch.signatures?.referee || ''
+                          home: sigRefA.current?.getDataUrl() || selectedMatch.signatures?.home || '',
+                          away: sigRefB.current?.getDataUrl() || selectedMatch.signatures?.away || '',
+                          referee: sigRefReferee.current?.getDataUrl() || selectedMatch.signatures?.referee || ''
                         }
                       });
                     }}

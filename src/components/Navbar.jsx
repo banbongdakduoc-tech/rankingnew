@@ -150,19 +150,6 @@ export default function Navbar({
             </button>
           )}
 
-          {/* Đang ở trang công khai nhưng đã đăng nhập tài khoản trước đó */}
-          {isPublic && currentUser && (
-            <button
-              type="button"
-              className="btn ghost small mr8"
-              onClick={() => onNavigate(currentUser.role === 'admin' ? '/btc' : '/thuky')}
-              style={{ color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              {currentUser.role === 'admin' ? <Shield size={14} /> : <FileText size={14} />}
-              <span>Vào Cổng {currentUser.role === 'admin' ? 'BTC' : 'Thư Ký'}</span>
-            </button>
-          )}
-
           {/* User Profile & Logout (cho cổng BTC và Thư Ký) */}
           {currentUser && (isBtcPortal || isRefereePortal) && (
             <div className="user-profile-badge">

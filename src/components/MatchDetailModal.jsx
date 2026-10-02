@@ -1,3 +1,5 @@
+import { askText } from '../services/promptService';
+import { compareEvents } from '../services/tournamentService';
 // src/components/MatchDetailModal.jsx
 import {
   X,
@@ -22,9 +24,10 @@ export default function MatchDetailModal({
 }) {
   if (!match) return null;
 
-  const events = (match.events || []).slice().sort((a, b) => Number(a.minute) - Number(b.minute));
+  const events = (match.events || []).filter(e => !e.cancelled).slice().sort(compareEvents);
   const hasPen = match.penA !== undefined && match.penA !== '' && match.penB !== undefined && match.penB !== '';
 
+  const share = async () => { const url = new URL('/', window.location.origin); url.searchParams.set('match', match.id); try { await navigator.clipboard.writeText(url.href); } catch { await askText('Sao chép liên kết trận:', url.href); } };
   return (
     <div className="modal-backdrop animate-fade-in" onClick={onClose} style={{ zIndex: 1100 }}>
       <div
@@ -39,7 +42,7 @@ export default function MatchDetailModal({
             </span>
             <h2 className="modal-title">Chi Tiết Trận Đấu</h2>
           </div>
-          <div className="modal-actions">
+          <div className="modal-actions"><button className="btn ghost small" onClick={share}>Sao chép link trận</button>
             {backLabel !== 'Đóng' && (
               <button
                 type="button"
