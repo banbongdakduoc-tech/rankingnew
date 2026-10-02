@@ -249,7 +249,6 @@ function MainApp() {
       />
 
       {/* MAIN VIEW BASED ON ROUTE PATH */}
-      <SyncStatus staff={isBtcRoute || isRefereeRoute} />
       <main style={{ flex: 1 }}>
         {sync.loading ? <div className="app-container card">Đang tải dữ liệu giải đấu…</div> : sync.error && !sync.updatedAt ? <div className="app-container card text-gold">Không tải được dữ liệu: {sync.error}. Kiểm tra kết nối backend.</div> : <Suspense fallback={<div className="app-container card">Đang mở cổng…</div>}>
         {/* 1. CỔNG BAN TỔ CHỨC (/btc hoặc /admin) */}
@@ -285,6 +284,7 @@ function MainApp() {
         </Suspense>}
       </main>
 
+      <SyncStatus staff={!!currentUser && (isBtcRoute || isRefereeRoute)} />
       {/* FOOTER */}
       <footer className="app-footer" style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', padding: '24px 16px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
@@ -292,7 +292,7 @@ function MainApp() {
             <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
               {tourConfig.name || 'Dược Premier League 2026'}
             </span>
-            <span>• CLB Thể Thao Trường Dược</span>
+            <span>• {tourConfig.organizer || 'CLB Thể Thao Trường Dược'}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <span>Hệ thống Bảng Xếp Hạng & Quản Lý Giải Đấu Bóng Đá Trực Tuyến</span>

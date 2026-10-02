@@ -246,15 +246,6 @@ export default function RefereeDashboard() {
   const handleStartMatch = async () => {
     try {
 
-    const hasPlayerA = lineupA.some((p) => p.played);
-    const hasPlayerB = lineupB.some((p) => p.played);
-
-    if (!hasPlayerA || !hasPlayerB) {
-      if (!window.confirm('Có đội chưa điểm danh cầu thủ ra sân nào. Bạn vẫn muốn bắt đầu trận đấu?')) {
-        return;
-      }
-    }
-
     await update(ref(db, `matches/${selectedMatch.id}`), {
       status: 'Đang LIVE',
       lineupA,
@@ -760,11 +751,12 @@ export default function RefereeDashboard() {
               <div className="card-header">
                 <div className="card-title">
                   <CheckSquare size={18} className="text-accent" />
-                  <span>Bước 3: Điểm Danh Cầu Thủ Ra Sân</span>
+                  <span>Bước 3: Kiểm Tra Treo Giò & Điểm Danh (Tùy Chọn)</span>
                 </div>
                 <span className="badge badge-ghost">Bước 3 / 5</span>
               </div>
 
+              <p className="text-dim mb16">Điểm danh không bắt buộc và không có số lượng tối thiểu. Bạn có thể bắt đầu trận ngay; cầu thủ bị treo giò vẫn được cảnh báo và khóa chọn.</p>
               <div className="grid-2 mb24">
                 {/* Team A Lineup */}
                 <div className="card" style={{ background: 'var(--bg-secondary)', padding: '16px' }}>
@@ -1067,7 +1059,7 @@ export default function RefereeDashboard() {
                   </div>
                 </div>
 
-                {selectedMatch.group === 'Vòng Knock-out' && selectedMatch.scoreA === selectedMatch.scoreB && <ShootoutPanel match={{ ...selectedMatch, lineupA, lineupB }} players={allPlayers} rounds={tourConfig.shootoutRounds || 5} onChange={async kicks => {
+                {selectedMatch.group === 'Vòng Knock-out' && selectedMatch.scoreA === selectedMatch.scoreB && <ShootoutPanel match={{ ...selectedMatch, lineupA, lineupB }} players={allPlayers} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} onChange={async kicks => {
     try {
  await update(ref(db, `matches/${selectedMatch.id}`), { shootout: kicks }); setSelectedMatch(prev => ({ ...prev, shootout: kicks }));
     } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
@@ -1151,15 +1143,15 @@ export default function RefereeDashboard() {
                     >
                       <option value="">-- Chọn Cầu thủ --</option>
                       {evTeam === selectedMatch.home &&
-                        lineupA.filter(p => eventType === 'card' || p.played).map((p) => (
-                          <option key={p.num} value={`${p.num} - ${p.name}`}>
-                            #{p.num} - {p.name} {p.shirtName ? `(${p.shirtName})` : ''}
+                        lineupA.map((p) => (
+                          <option key={p.num} disabled={eventType!=='card' && (suspensions[`${evTeam}@@${p.id}`]?.remainingMatches>0)} value={`${p.num} - ${p.name}`}>
+                            #{p.num} - {p.name} {p.shirtName ? `(${p.shirtName})` : ''} {suspensions[`${evTeam}@@${p.id}`]?.remainingMatches>0?'· Treo giò':''}
                           </option>
                         ))}
                       {evTeam === selectedMatch.away &&
-                        lineupB.filter(p => eventType === 'card' || p.played).map((p) => (
-                          <option key={p.num} value={`${p.num} - ${p.name}`}>
-                            #{p.num} - {p.name} {p.shirtName ? `(${p.shirtName})` : ''}
+                        lineupB.map((p) => (
+                          <option key={p.num} disabled={eventType!=='card' && (suspensions[`${evTeam}@@${p.id}`]?.remainingMatches>0)} value={`${p.num} - ${p.name}`}>
+                            #{p.num} - {p.name} {p.shirtName ? `(${p.shirtName})` : ''} {suspensions[`${evTeam}@@${p.id}`]?.remainingMatches>0?'· Treo giò':''}
                           </option>
                         ))}
                     </select>

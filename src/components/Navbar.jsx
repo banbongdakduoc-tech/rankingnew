@@ -54,14 +54,14 @@ export default function Navbar({
   };
 
   return (
-    <header className="app-navbar">
+    <header className={`app-navbar ${isPublic?'public-navbar':'staff-navbar'}`}>
       <div className="navbar-container">
         {/* Brand & Tournament Name */}
         <div className="navbar-brand" onClick={() => onNavigate('/')} style={{ cursor: 'pointer' }}>
           <div className="brand-logo-wrap">
             <img
-              src="/logo.png"
-              alt="CLB Thể Thao Trường Dược"
+              src={tourConfig.logo || '/logo.png'}
+              alt={tourConfig.organizer || 'CLB Thể Thao Trường Dược'}
               className="brand-logo"
             />
           </div>
@@ -70,7 +70,7 @@ export default function Navbar({
               {tourConfig.name || 'Dược Premier League 2026'}
             </h1>
             <div className="brand-subtitle">
-              <span>CLB Thể Thao Trường Dược</span>
+              <span>{tourConfig.organizer || 'CLB Thể Thao Trường Dược'}</span>
               {isPublic && getStatusBadge()}
               {isBtcPortal && (
                 <span className="badge badge-accent-glow" style={{ marginLeft: '6px', fontSize: '11px' }}>

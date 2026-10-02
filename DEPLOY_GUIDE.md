@@ -26,3 +26,12 @@ Chạy theo báo cáo QA với dữ liệu demo; kiểm tra ba cổng, ký/nộp
 # Kích hoạt CI cho demo
 
 Mẫu tại `docs/ci-demo-workflow.yml` chỉ chạy trên nhánh `demo`. Để kích hoạt, dùng GitHub UI hoặc token có quyền `workflow` đưa file vào `.github/workflows/demo-check.yml` trên nhánh demo. Token dùng trong lần push này thiếu quyền đó; các kiểm tra `npm run check` và `npm audit` đã chạy local trước push.
+
+
+### Quản trị demo sau khởi tạo
+
+BTC đã đăng nhập có thể mở **Tài khoản thư ký** để tạo người dùng; backend tự hash mật khẩu, chỉ cấp quyền `referee`. Chọn thư ký theo họ tên tại lịch thi đấu, không nhập username thủ công. Tài khoản BTC đầu tiên vẫn khởi tạo theo hướng dẫn phía trên.
+
+Trong **Điều lệ & dữ liệu**, BTC chỉnh tên giải, đơn vị tổ chức, logo (cắt vuông/nén), điều lệ, sao lưu và nhật ký. Khi tạo giải mới, tên/đơn vị/logo cũng có trong bước cấu hình ban đầu.
+
+Điểm danh là tùy chọn; không có số lượng tối thiểu. Cảnh báo và chặn cầu thủ đang treo giò vẫn có hiệu lực. Trang khán giả chỉ có BXH/thống kê/kết quả đã duyệt; ticker LIVE vẫn cập nhật trận đang diễn ra. Đèn đồng bộ nằm cuối trang: xanh đã kết nối, cam đang kết nối/chờ đồng bộ, đỏ mất kết nối; chạm đèn để xem chi tiết hoặc xử lý nháp.

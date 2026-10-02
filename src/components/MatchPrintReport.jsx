@@ -37,7 +37,7 @@ export default function MatchPrintReport({
         {/* Header */}
         <div className="doc-header">
           <div className="doc-org-info">
-            <div className="doc-org-name">CÂU LẠC BỘ THỂ THAO TRƯỜNG DƯỢC</div>
+            <div className="doc-org-name">{(tourConfig.organizer||'CÂU LẠC BỘ THỂ THAO TRƯỜNG DƯỢC').toUpperCase()}</div>
             <div className="doc-suborg">BAN TỔ CHỨC GIẢI ĐẤU</div>
           </div>
           <div className="doc-national-info">

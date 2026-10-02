@@ -16,12 +16,12 @@ export function publicState(data) {
     if(m.shootout)out.shootout=m.shootout.map(k=>pick(k,['id','team','playerId','player','result','sequence','cancelled']));
     if(m.clock)out.clock=pick(m.clock,['elapsed','startedAt','period','running','timeBasis']);return [id,out];
   }));
-  return {serverTime:Date.now(),seasonHistory:Object.values(data.seasons || {}).map(s=>({id:s.id,name:s.name,at:s.at})),schemaVersion:2,_version:data._version || 0,tourStatus:data.tourStatus,tourConfig:pick(data.tourConfig,['name','format','numGroups','knockoutFormat','halfDuration',...Object.keys(DEFAULT_RULES),'minRestMinutes']),groupsData:data.groupsData,players:Object.fromEntries(Object.entries(data.players||{}).map(([team,list])=>[team,list.map(p=>pick(p,['id','team','num','name','shirtName','avatar']))])),matches,suspensions:Object.fromEntries(Object.entries(data.suspensions||{}).map(([key,ban])=>[key,pick(ban,['team','playerId','player','reason','remainingMatches','totalMatches','needsReview'])]))};
+  return {serverTime:Date.now(),seasonHistory:Object.values(data.seasons || {}).map(s=>({id:s.id,name:s.name,at:s.at})),schemaVersion:2,_version:data._version || 0,tourStatus:data.tourStatus,tourConfig:pick(data.tourConfig,['name','organizer','logo','format','numGroups','knockoutFormat','halfDuration',...Object.keys(DEFAULT_RULES),'minRestMinutes']),groupsData:data.groupsData,players:Object.fromEntries(Object.entries(data.players||{}).map(([team,list])=>[team,list.map(p=>pick(p,['id','team','num','name','shirtName','avatar']))])),matches,suspensions:Object.fromEntries(Object.entries(data.suspensions||{}).map(([key,ban])=>[key,pick(ban,['team','playerId','player','reason','remainingMatches','totalMatches','needsReview'])]))};
 }
 export function staffState(data,user) {
   const out=publicState(data);
   out.matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>[id,canOperate(m,user)?structuredClone(m):out.matches[id]]));out.handledViolations=data.handledViolations || {};
-  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
+  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
   return out;
 }
 export function reportHash(m) {
@@ -35,7 +35,7 @@ function validateMatch(m,state,{approval=false,submission=false}={}) {
   m.scoreA=integer(m.scoreA ?? 0,'Tỷ số A');m.scoreB=integer(m.scoreB ?? 0,'Tỷ số B');
   if(!['played','forfeit'].includes(m.resultType || 'played'))fail('Loại kết quả không hợp lệ.');
   if(m.date){try{m.date=normalizeKickoff(m.date);}catch{fail('Ngày giờ trận không hợp lệ.');}}
-  if(m.assignedSecretary && state.accounts[m.assignedSecretary]?.role!=='referee')fail('Tài khoản thư ký được phân công không hợp lệ.');
+  if(m.assignedSecretary && (state.accounts[m.assignedSecretary]?.role!=='referee'||state.accounts[m.assignedSecretary]?.disabled))fail('Tài khoản thư ký được phân công không hợp lệ.');
   for(const [side,team] of [['lineupA',m.home],['lineupB',m.away]]) {
     if(!Array.isArray(m[side] || []))fail('Đội hình không hợp lệ.');
     const seen=new Set();
@@ -65,7 +65,6 @@ function validateMatch(m,state,{approval=false,submission=false}={}) {
     const key=`${e.team}@@${p.id}`;
     if(e.cancelled)continue;
     if(e.type==='goal' && dismissals.has(key))fail(`Cầu thủ ${e.player} đã bị truất quyền thi đấu trước bàn thắng.`);
-    if(e.type==='goal' && !(m[e.team===m.home?'lineupA':'lineupB']||[]).some(x=>x.played&&(x.id===p.id||Number(x.num)===Number(p.num)&&x.name===p.name)))fail(`Cầu thủ ${e.player} chưa được điểm danh ra sân.`);
     if(e.type==='card' && ['Vàng','yellow','second_yellow_red'].includes(e.detail)) {
       const cardKey=`${key}@@${e.phase==='shootout'?'shootout':'play'}`;const n=(yellows.get(cardKey)||0)+1;yellows.set(cardKey,n);
       if(n>2)fail('Cầu thủ đã nhận đủ hai vàng trong trận.');
@@ -91,8 +90,8 @@ function validateMatch(m,state,{approval=false,submission=false}={}) {
       if(!(state.players[kick.team]||[]).some(p=>p.id===kick.playerId))fail('Người sút luân lưu không hợp lệ.');
       const dismissed=dismissals.get(`${kick.team}@@${kick.playerId}`);
       const disqualified=p=>{const d=dismissals.get(`${kick.team}@@${p.id}`);return d&&(d.phase!=='shootout'||!kick.sequence||d.sequence<=kick.sequence);};
-      if(!(m[kick.team===m.home?'lineupA':'lineupB']||[]).some(p=>p.id===kick.playerId&&p.played)||dismissed&&disqualified({id:kick.playerId}))fail('Người sút không đủ điều kiện.');
-      const eligible=(m[kick.team===m.home?'lineupA':'lineupB']||[]).filter(p=>p.played&&!disqualified(p));
+      if(dismissed&&disqualified({id:kick.playerId}))fail('Người sút không đủ điều kiện.');
+      const eligible=(state.players[kick.team]||[]).filter(p=>{const ban=state.suspensions[`${kick.team}@@${p.id}`];return !disqualified(p)&&!(m.status!=='Đã xong'&&ban?.remainingMatches>0&&ban.matchId!==m.id);});
       const used=cycles.get(kick.team)||new Set();if(used.size===eligible.length)used.clear();
       if(used.has(kick.playerId))fail('Mọi cầu thủ đủ điều kiện phải sút trước khi một người sút lần nữa.');used.add(kick.playerId);cycles.set(kick.team,used);
     }
@@ -236,6 +235,9 @@ export function applyCommand(original,cmd,user) {
     }
     if(!['none','config','setup_teams','draft','active','completed'].includes(state.tourStatus))fail('Trạng thái giải không hợp lệ.');
     const config=state.tourConfig;
+    if(typeof config.name!=='string'||!config.name.trim()||config.name.length>160)fail('Tên giải phải có từ 1–160 ký tự.');
+    if(config.organizer!==undefined&&(typeof config.organizer!=='string'||config.organizer.length>160))fail('Tên đơn vị tổ chức tối đa 160 ký tự.');
+    if(config.logo && (typeof config.logo!=='string'||config.logo.length>300000||!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(config.logo)))fail('Logo phải là ảnh PNG/JPEG/WebP được nén, tối đa 300 KB.');
     for(const [field,min,max] of [['halfDuration',1,90],['numGroups',1,26],['yellowThreshold',2,10],['shootoutRounds',1,10],['directRedBan',1,20],['secondYellowBan',1,20],['minRestMinutes',0,1440],['extraTimeMinutes',0,30]])if(config[field]!==undefined && (!Number.isInteger(Number(config[field]))||Number(config[field])<min||Number(config[field])>max))fail(`Cấu hình ${field} ngoài phạm vi.`);
     validateGroups(state.groupsData);
     if(!['group','league'].includes(config.format)||!['quarter','semi'].includes(config.knockoutFormat))fail('Thể thức không hợp lệ.');
@@ -253,7 +255,6 @@ export function applyCommand(original,cmd,user) {
       if(old && (m.home!==old.home||m.away!==old.away) && old.status!=='Sắp diễn ra')fail('Không thay đội của trận đã bắt đầu.');
       if(m.status==='Đang LIVE') {
         for(const [side,team] of [['lineupA',m.home],['lineupB',m.away]]) {
-          if(!(m[side]||[]).some(p=>p.played))fail('Mỗi đội cần điểm danh cầu thủ trước khi bắt đầu.');
           for(const p of m[side]||[]){const suspension=state.suspensions[`${team}@@${p.id}`] || state.suspensions[`${team}@@${p.num} - ${p.name}`];if(p.played && suspension?.remainingMatches!==0 && suspension)fail(`${p.name} còn án treo giò.`);}
         }
       }
@@ -279,7 +280,7 @@ export function applyCommand(original,cmd,user) {
           if(m.resultType==='forfeit')continue;
           const source=state.matches[ban.matchId];if(source?.date&&m.date&&Date.parse(m.date)<=Date.parse(source.date))continue;
           const lineup=ban.team===m.home?m.lineupA:m.lineupB;
-          if((lineup||[]).some(p=>p.played&&key===`${ban.team}@@${p.id}`)){ban.eligibilityConflicts=[...new Set([...(ban.eligibilityConflicts||[]),id])];continue;}
+          if((lineup||[]).some(p=>p.played&&key===`${ban.team}@@${p.id}`)||(m.events||[]).some(e=>!e.cancelled&&e.type==='goal'&&key===`${e.team}@@${e.playerId}`)||(m.shootout||[]).some(k=>!k.cancelled&&key===`${k.team}@@${k.playerId}`)){ban.eligibilityConflicts=[...new Set([...(ban.eligibilityConflicts||[]),id])];continue;}
           ban.remainingMatches--;ban.servedMatchIds=[...(ban.servedMatchIds||[]),id];if(!ban.remainingMatches)ban.servedAt=now;
           state.suspensions[key]=ban;
         }
@@ -292,7 +293,12 @@ export function applyCommand(original,cmd,user) {
   // Decisions survive resets/edits, but a changed source event is flagged for review.
   const violationIds=new Set(detectViolations(Object.values(state.matches),{},state.tourConfig).map(v=>v.key));
   for(const ban of Object.values(state.suspensions))if(ban.violationKey)ban.needsReview=!violationIds.has(ban.violationKey)||!!ban.eligibilityConflicts?.length;
-  for(const id of changed)if(state.matches[id])state.matches[id].lastCommand=cmd.id;
+  for(const id of changed)if(state.matches[id]){
+    const m=state.matches[id],old=original.matches[id];
+    const newParticipants=[...(m.events||[]).filter(e=>e.type==='goal'&&!e.cancelled&&!(old?.events||[]).some(o=>o.id===e.id&&!o.cancelled&&o.team===e.team&&o.playerId===e.playerId)),...(m.shootout||[]).filter(k=>!k.cancelled&&!(old?.shootout||[]).some(o=>o.id===k.id&&!o.cancelled&&o.team===k.team&&o.playerId===k.playerId))];
+    for(const e of newParticipants){const ban=original.suspensions[`${e.team}@@${e.playerId}`];if(ban?.remainingMatches>0&&ban.matchId!==id)fail('Cầu thủ còn án treo giò, không được ghi nhận tham gia trận.');}
+    m.lastCommand=cmd.id;
+  }
   state._version=(original._version||0)+1;state.receipts[receiptKey]={at:now};
   const receipts=Object.keys(state.receipts);while(receipts.length>5000)delete state.receipts[receipts.shift()];
   state.audit=[...(original.audit||[]),{id:cmd.id,at:now,by:user.username,role:user.role,kind:cmd.kind,paths:Object.keys(cmd.patches||{}),matchIds:[...changed],reason:cmd.reason || Object.values(cmd.patches||{}).find(v=>v&&typeof v==='object'&&(v.reason||v.pardonReason))?.reason || Object.values(cmd.patches||{}).find(v=>v&&typeof v==='object'&&v.pardonReason)?.pardonReason || ''}].slice(-1000);

@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 import { ref, set, update, onValue } from '../services/dataService';
 import { db, reopenMatch, resetTournament, sendCommand } from '../services/dataService';
 import AdminTools from '../components/AdminTools';
+import SecretaryAccounts from '../components/SecretaryAccounts';
+import TournamentIdentity from '../components/TournamentIdentity';
 import ShootoutPanel from '../components/ShootoutPanel';
 import {
   Trophy,
@@ -101,6 +103,7 @@ export default function AdminDashboard() {
   const [groupsData, setGroupsData] = useState([]);
   const [matches, setMatches] = useState([]);
   const [players, setPlayers] = useState({});
+  const [secretaryAccounts,setSecretaryAccounts]=useState([]);
   const [suspensions, setSuspensions] = useState({});
   const [handledViolations, setHandledViolations] = useState({});
 
@@ -140,7 +143,8 @@ export default function AdminDashboard() {
     const unsubscribe5 = onValue(ref(db, 'suspensions'), (snap) => setSuspensions(snap.val() || {}));
     const unsubscribe6 = onValue(ref(db, 'handledViolations'), (snap) => setHandledViolations(snap.val() || {}));
 
-    return () => { unsubscribe0(); unsubscribe1(); unsubscribe2(); unsubscribe3(); unsubscribe4(); unsubscribe5(); unsubscribe6(); };
+    const unsubscribe7=onValue(ref(db,'secretaryAccounts'),snap=>setSecretaryAccounts(snap.val()||[]));
+    return () => { unsubscribe7(); unsubscribe0(); unsubscribe1(); unsubscribe2(); unsubscribe3(); unsubscribe4(); unsubscribe5(); unsubscribe6(); };
 }, [editTeam]);
 
   // ==========================================
@@ -843,31 +847,36 @@ export default function AdminDashboard() {
   return (
     <div className="app-container animate-fade-in">
       {/* Top Tabs */}
-      <div className="card mb16" style={{ padding: '8px 12px' }}>
+      <div className="card mb16 portal-tabs" style={{ padding: '8px 12px' }}>
         <div className="navbar-nav" style={{ background: 'transparent', border: 'none' }}>
           <button
             className={`nav-link ${adminTab === 'dieuhanh' ? 'active' : ''}`}
             onClick={() => setAdminTab('dieuhanh')}
           >
             <Settings size={16} />
-            <span>⚙️ Điều Hành & Duyệt Biên Bản</span>
+            <span>Điều hành & biên bản</span>
           </button>
           <button
             className={`nav-link ${adminTab === 'cauthu' ? 'active' : ''}`}
             onClick={() => setAdminTab('cauthu')}
           >
             <Users size={16} />
-            <span>👥 Quản Lý Đội Hình</span>
+            <span>Đội hình</span>
           </button>
           <button
             className={`nav-link ${adminTab === 'xembxh' ? 'active' : ''}`}
             onClick={() => setAdminTab('xembxh')}
           >
             <Trophy size={16} />
-            <span>📊 Xem BXH & Sơ Đồ</span>
+            <span>BXH & sơ đồ</span>
           </button>
+          <button className={`nav-link ${adminTab==='congcu'?'active':''}`} onClick={()=>setAdminTab('congcu')}><Settings size={18}/><span>Điều lệ & dữ liệu</span></button>
+          <button className={`nav-link ${adminTab==='taikhoan'?'active':''}`} onClick={()=>setAdminTab('taikhoan')}><Users size={18}/><span>Tài khoản thư ký</span></button>
         </div>
       </div>
+
+      {adminTab === 'congcu' && <><TournamentIdentity tourConfig={tourConfig}/><AdminTools tourConfig={tourConfig}/></>}
+      {adminTab === 'taikhoan' && <SecretaryAccounts/>}
 
       {/* ======================================================== */}
       {/* TAB 1: ĐIỀU HÀNH & DUYỆT BIÊN BẢN */}
@@ -997,7 +1006,7 @@ export default function AdminDashboard() {
                       {reviewingMatch.resultType === 'forfeit' && <label className="form-label">Lý do quyết định<input className="input-dark" value={reviewingMatch.administrativeReason || ''} onChange={e => setReviewingMatch({ ...reviewingMatch, administrativeReason: e.target.value })}/></label>}
                       <label className="form-label">Ngoại lệ chữ ký / nội dung sửa sau ký (BTC ghi lý do)<input className="input-dark" placeholder="Để trống nếu biên bản đã ký đúng nội dung" value={reviewingMatch.signatureException || ''} onChange={e => setReviewingMatch({ ...reviewingMatch, signatureException: e.target.value })}/></label>
                     </div>
-                    {reviewingMatch.group === 'Vòng Knock-out' && currentScoreA === currentScoreB && <ShootoutPanel match={reviewingMatch} players={players} rounds={tourConfig.shootoutRounds || 5} onChange={kicks => { const result = { ...reviewingMatch, shootout: kicks }; setReviewingMatch({ ...result, advancingTeam: resolveWinner(result) }); }}/>}
+                    {reviewingMatch.group === 'Vòng Knock-out' && currentScoreA === currentScoreB && <ShootoutPanel match={reviewingMatch} players={players} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} onChange={kicks => { const result = { ...reviewingMatch, shootout: kicks }; setReviewingMatch({ ...result, advancingTeam: resolveWinner(result) }); }}/>}
                     {/* 🏆 BẮT BUỘC: CHỌN ĐỘI GIÀNH QUYỀN ĐI TIẾP (KNOCK-OUT) - ĐẶT NGAY ĐẦU TRỰC QUAN */}
                     {reviewingMatch.group === 'Vòng Knock-out' && (
                       <div className="ko-winner-selector-box">
@@ -1344,7 +1353,6 @@ export default function AdminDashboard() {
             );
           })()}
 
-          <AdminTools tourConfig={tourConfig} />
           {/* Pending Matches & Discipline Cards */}
           {(tourStatus === 'active' || tourStatus === 'completed') && (
             <div className="grid-2 mb24">
@@ -1525,6 +1533,8 @@ export default function AdminDashboard() {
                     />
                   </div>
 
+                  <div className="form-group"><label className="form-label">Đơn vị tổ chức<input className="input-dark" required maxLength={160} value={tourConfig.organizer||'CLB Thể Thao Trường Dược'} onChange={e=>setTourConfig({...tourConfig,organizer:e.target.value})}/></label></div>
+                  <div className="form-group identity-logo"><img src={tourConfig.logo||'/logo.png'} alt="Logo giải đấu"/><label className="btn ghost">Chọn logo giải<input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;try{const logo=await chooseAvatarImage(file);setTourConfig(c=>({...c,logo}));}catch(err){toast.error(err.message);}}}/></label></div>
                   <div className="form-group">
                     <label className="form-label">Thể thức thi đấu:</label>
                     <select
@@ -1652,28 +1662,29 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="table-container mb16">
-                  <table className="dpl-table">
+                  <table className="dpl-table admin-schedule">
                     <thead>
                       <tr>
                         <th>Vòng / Bảng</th>
                         <th>Cặp Đấu</th>
                         <th>Tỉ Số</th>
-                        <th>Ngày Giờ VN / Sân</th>
+                        <th>Ngày giờ (VN)</th>
+                        <th>Sân thi đấu</th>
                         <th>Trọng Tài</th>
-                        <th>Thư Ký</th>
+                        <th>Thư ký phụ trách</th>
                         <th>Trạng Thái</th>
-                        <th>Sửa</th>
+                        <th>Biên bản</th>
                       </tr>
                     </thead>
                     <tbody>
                       {matches.map((m) => (
                         <tr key={m.id}>
-                          <td><span className="badge badge-ghost">{m.round || m.group}</span></td>
-                          <td style={{ fontWeight: '700' }}>{m.home} vs {m.away}</td>
-                          <td className="text-accent font-bold">
+                          <td data-label="Vòng / bảng"><span className="badge badge-ghost">{m.round || m.group}</span></td>
+                          <td data-label="Cặp đấu" style={{ fontWeight: '700' }}>{m.home} vs {m.away}</td>
+                          <td data-label="Tỉ số" className="text-accent font-bold">
                             {m.status === 'Đã xong' || m.status === 'Đang LIVE' ? `${m.scoreA} - ${m.scoreB}` : '—'}
                           </td>
-                          <td>
+                          <td data-label="Ngày giờ (VN)">
                             {tourStatus !== 'completed' ? (
                               <input
                                 type="datetime-local"
@@ -1686,7 +1697,8 @@ export default function AdminDashboard() {
                               formatDateTime(m.date)
                             )}
                           </td>
-                          <td>
+                          <td data-label="Sân thi đấu"><label className="match-field-label">Sân thi đấu<input className="input-dark" aria-label={`Sân thi đấu: ${m.home} - ${m.away}`} placeholder="Ví dụ: Sân số 1" disabled={tourStatus==='completed'} defaultValue={m.venue||''} onBlur={e=>saveMatchField(m,'venue',e.target.value)}/></label></td>
+                          <td data-label="Trọng tài">
                             {tourStatus !== 'completed' ? (
                               <input
                                 type="text"
@@ -1699,29 +1711,12 @@ export default function AdminDashboard() {
                               m.ref || '—'
                             )}
                           </td>
-                          <td>
-                            {tourStatus !== 'completed' ? (
-                              <input
-                                type="text"
-                                className="input-dark"
-                                style={{ padding: '4px 8px', fontSize: '12px', width: '100px' }}
-                                defaultValue={m.sec || ''}
-                                onBlur={e => saveMatchField(m, 'sec', e.target.value)}
-                              />
-                            ) : (
-                              m.sec || '—'
-                            )}
-                          </td>
-                          <td><span className="badge badge-ghost">{m.status}</span></td>
-                          <td>
+                          <td data-label="Thư ký phụ trách"><select className="select-dark" aria-label={`Thư ký phụ trách: ${m.home} - ${m.away}`} disabled={tourStatus==='completed'} value={m.assignedSecretary||''} onChange={async e=>{const username=e.target.value;const account=secretaryAccounts.find(a=>a.username===username);try{await update(ref(db,`matches/${m.id}`),{assignedSecretary:username,sec:account?.name||''});toast.success('Đã lưu phân công thư ký.');}catch(err){toast.error(err.message);}}}><option value="">Chưa phân công</option>{secretaryAccounts.filter(a=>!a.disabled||a.username===m.assignedSecretary).map(a=><option key={a.username} value={a.username}>{a.name}{a.disabled?' (đã khóa)':''}</option>)}</select><small className="text-dim">Tạo người mới ở mục Tài khoản thư ký.</small></td>
+                          <td data-label="Trạng thái"><span className="badge badge-ghost">{m.status}</span></td>
+                          <td data-label="Biên bản">
                             <div style={{ display: 'flex', gap: '4px' }}>
-                              <input className="input-dark" aria-label="Sân thi đấu" placeholder="Sân thi đấu" defaultValue={m.venue || ''} onBlur={e=>saveMatchField(m,'venue',e.target.value)} /><input className="input-dark" aria-label="Tài khoản thư ký được phân công" placeholder="Username thư ký" defaultValue={m.assignedSecretary || ''} onBlur={async e => {
-    try {
- if (e.target.value.trim() !== (m.assignedSecretary || '')) await update(ref(db, `matches/${m.id}`), { assignedSecretary: e.target.value.trim().toLowerCase() }).catch(err => toast.error(err.message));
-    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
-}} />
                               <button className="btn ghost tiny" onClick={() => handleOpenReview(m)}>
-                                Sửa
+                                Xem / sửa biên bản
                               </button>
                               {m.status === 'Đã xong' && (
                                 <button

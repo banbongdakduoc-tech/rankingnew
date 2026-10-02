@@ -13,7 +13,7 @@ test('Public DTO không chứa accounts, password, chữ ký hoặc ghi chú',()
 test('Giả role frontend không thay quyền server; thư ký khác không sửa trận',()=>{assert.throws(()=>add(fixture(),event,'c',other),/phân công/);assert.throws(()=>applyCommand(fixture(),command({'accounts/evil':{}},fixture()),admin),/nhánh/);});
 test('Append hai thiết bị không mất event, retry command không tạo trùng',()=>{let s=fixture();const cmd={kind:'events',id:'cmd1',matchId:'m',baseVersion:1,add:[event]};s=applyCommand(s,cmd,staff);const next=add(s,{...event,id:'e2',minute:11},'cmd2');assert.equal(next.matches.m.events.length,2);assert.equal(next.matches.m.scoreA,2);assert.deepEqual(applyCommand(next,cmd,staff),next);});
 test('Event ID trùng nội dung khác bị chặn',()=>{const s=add(fixture(),event);assert.throws(()=>add(s,{...event,minute:11}),/tồn tại/);});
-test('Event team sai/không điểm danh/loại giả/giá trị âm bị chặn',()=>{for(const e of [{...event,team:'C'},{...event,detail:'shootout'},{...event,minute:-1}])assert.throws(()=>add(fixture(),e));const s=fixture();s.matches.m.lineupA=[];assert.throws(()=>add(s,event),/điểm danh/);});
+test('Event sai bị chặn; điểm danh không bắt buộc',()=>{for(const e of [{...event,team:'C'},{...event,detail:'shootout'},{...event,minute:-1}])assert.throws(()=>add(fixture(),e));const s=fixture();s.matches.m.lineupA=[];assert.equal(add(s,event).matches.m.scoreA,1);});
 test('Vàng thứ hai được chuẩn hóa; bàn sau truất quyền bị chặn',()=>{let s=fixture();for(const [id,minute] of [['y1',5],['y2',8]])s=add(s,{...event,id,minute,type:'card',detail:'yellow'});assert.equal(s.matches.m.events[1].detail,'second_yellow_red');assert.throws(()=>add(s,event),/truất/);});
 test('Hủy event giữ lịch sử, score giảm, lý do không mất',()=>{let s=add(fixture(),event);s=applyCommand(s,{kind:'events',id:'remove',matchId:'m',baseVersion:1,remove:['e1'],reason:'Ghi nhầm'},staff);assert.equal(s.matches.m.scoreA,0);assert.equal(s.matches.m.events[0].cancelled,true);assert.equal(s.matches.m.events[0].cancelReason,'Ghi nhầm');});
 test('Staff không tự duyệt, không sửa cấu trúc trận',()=>{const s=submitted();assert.throws(()=>applyCommand(s,command({'matches/m/status':'Đã xong'},s),staff));assert.throws(()=>applyCommand(fixture(),command({'matches/m/home':'C'},fixture()),staff));});
@@ -91,4 +91,24 @@ test('Không giảm án khi cầu thủ còn án vẫn thi đấu hoặc duyệt
 test('Đồng hồ lệch giờ client được chuẩn hóa server, gồm thời gian offline chờ gửi',()=>{
   const s=fixture(),now=Date.now(),clientNow=now+3600000;const cmd=command({'matches/m/clock':{elapsed:60,running:true,period:1,startedAt:clientNow-120000}},s);cmd.clientNow=clientNow;
   const next=applyCommand(s,cmd,staff),clock=next.matches.m.clock;assert.equal(clock.elapsed,180);assert.equal(clock.timeBasis,'server');assert.ok(Math.abs(clock.startedAt-now)<1000);assert.equal(applyCommand(next,cmd,staff).matches.m.clock.elapsed,180);
+});
+
+test('Bắt đầu trận không điểm danh; treo giò vẫn chặn ghi bàn',()=>{
+  let s=fixture();s.matches.m.status='Sắp diễn ra';s.matches.m.lineupA=[];s.matches.m.lineupB=[];
+  s=applyCommand(s,command({'matches/m/status':'Đang LIVE'},s),staff);assert.equal(s.matches.m.status,'Đang LIVE');
+  s.suspensions['A@@pa']={team:'A',playerId:'pa',reason:'Đỏ',remainingMatches:1,matchId:'previous'};
+  assert.throws(()=>add(s,event),/treo giò/);
+});
+test('Logo và đơn vị tổ chức công khai, chỉ nhận ảnh raster nén',()=>{
+  const s=fixture();const next=applyCommand(s,command({'tourConfig/name':'Giải thử','tourConfig/organizer':'BTC thử','tourConfig/logo':signature},s),admin);
+  assert.equal(publicState(next).tourConfig.organizer,'BTC thử');assert.equal(publicState(next).tourConfig.logo,signature);
+  for(const logo of ['javascript:alert(1)','data:image/svg+xml;base64,aaa','x'.repeat(300001)])assert.throws(()=>applyCommand(s,command({'tourConfig/logo':logo},s),admin),/Logo/);
+  assert.throws(()=>applyCommand(s,command({'tourConfig/name':''},s),admin),/Tên giải/);
+});
+test('Luân lưu không cần điểm danh, nhưng vẫn cấm cầu thủ bị truất quyền',()=>{
+  const s=fixture();s.matches.m.group='Vòng Knock-out';s.matches.m.lineupA=[];s.matches.m.lineupB=[];
+  const kick={id:'k1',team:'A',playerId:'pa',result:'scored',sequence:100};
+  const next=applyCommand(s,command({'matches/m/shootout':[kick]},s),staff);assert.equal(next.matches.m.penA,1);
+  s.matches.m.events=[{...event,type:'card',detail:'direct_red',sequence:50}];
+  assert.throws(()=>applyCommand(s,command({'matches/m/shootout':[kick]},s),staff),/đủ điều kiện/);
 });
