@@ -102,6 +102,7 @@ export default function AdminDashboard() {
   });
   const [groupsData, setGroupsData] = useState([]);
   const [matches, setMatches] = useState([]);
+  const [scheduleGroup,setScheduleGroup]=useState('');
   const [players, setPlayers] = useState({});
   const [secretaryAccounts,setSecretaryAccounts]=useState([]);
   const [suspensions, setSuspensions] = useState({});
@@ -831,6 +832,9 @@ export default function AdminDashboard() {
 
   const groupStageFinished = isGroupStageFinished(matches);
   const currentKnockoutFormat = tourConfig.knockoutFormat || 'quarter';
+  const scheduleGroupLabel=group=>group==='Vòng Knock-out'?'Knockout':/^bảng\s/i.test(group||'')?group.replace(/^bảng/i,'Bảng'):/^[a-z]$/i.test(group||'')?`Bảng ${group.toUpperCase()}`:group||'Chưa xếp bảng';
+  const scheduleGroups=[...new Set([...groupsData.map(g=>g.groupName),...matches.map(m=>m.group)].filter(Boolean))];
+  const visibleSchedule=matches.filter(m=>!scheduleGroup||m.group===scheduleGroup).slice().sort((a,b)=>(Date.parse(a.date)||Infinity)-(Date.parse(b.date)||Infinity));
   const qualifyCount = getQualifyingCount(currentKnockoutFormat, groupsData.length);
 
   // If in Print Mode, render full A4 report
@@ -1652,7 +1656,7 @@ export default function AdminDashboard() {
               <div>
                 <div className="flex-between mb16">
                   <div className="card-title" style={{ fontSize: '15px' }}>
-                    <span>📅 Lịch Thi Đấu Tổng Thể ({matches.length} trận)</span>
+                    <span>📅 Lịch thi đấu ({visibleSchedule.length}/{matches.length} trận)</span>
                   </div>
                   {tourStatus === 'draft' && (
                     <button className="btn green" onClick={handlePublishTournament}>
@@ -1661,11 +1665,17 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                <div className="table-container mb16">
+                <div className="schedule-filter-bar mb16">
+                  <label className="form-label" htmlFor="btc-schedule-group">Lọc theo bảng / vòng</label>
+                  <select id="btc-schedule-group" className="select-dark" value={scheduleGroup} onChange={e=>setScheduleGroup(e.target.value)}><option value="">Tất cả trận đấu</option>{scheduleGroups.map(group=><option key={group} value={group}>{scheduleGroupLabel(group)}</option>)}</select>
+                  <span className="text-dim">{visibleSchedule.length} trận · theo ngày giờ</span>
+                </div>
+                <div className="table-container schedule-scroll mb16" role="region" aria-label="Lịch thi đấu BTC, cuộn ngang để xem các cột" tabIndex={0}>
+
                   <table className="dpl-table admin-schedule">
                     <thead>
                       <tr>
-                        <th>Vòng / Bảng</th>
+                        <th>Bảng</th>
                         <th>Cặp Đấu</th>
                         <th>Tỉ Số</th>
                         <th>Ngày giờ (VN)</th>
@@ -1677,9 +1687,9 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {matches.map((m) => (
+                      {visibleSchedule.map((m) => (
                         <tr key={m.id}>
-                          <td data-label="Vòng / bảng"><span className="badge badge-ghost">{m.round || m.group}</span></td>
+                          <td data-label="Bảng"><span className="badge badge-ghost">{scheduleGroupLabel(m.group)}</span></td>
                           <td data-label="Cặp đấu" style={{ fontWeight: '700' }}>{m.home} vs {m.away}</td>
                           <td data-label="Tỉ số" className="text-accent font-bold">
                             {m.status === 'Đã xong' || m.status === 'Đang LIVE' ? `${m.scoreA} - ${m.scoreB}` : '—'}
@@ -1697,7 +1707,7 @@ export default function AdminDashboard() {
                               formatDateTime(m.date)
                             )}
                           </td>
-                          <td data-label="Sân thi đấu"><label className="match-field-label">Sân thi đấu<input className="input-dark" aria-label={`Sân thi đấu: ${m.home} - ${m.away}`} placeholder="Ví dụ: Sân số 1" disabled={tourStatus==='completed'} defaultValue={m.venue||''} onBlur={e=>saveMatchField(m,'venue',e.target.value)}/></label></td>
+                          <td data-label="Sân thi đấu"><label className="match-field-label"><span className="sr-only">Sân thi đấu</span><input className="input-dark" aria-label={`Sân thi đấu: ${m.home} - ${m.away}`} placeholder="Ví dụ: Sân số 1" disabled={tourStatus==='completed'} defaultValue={m.venue||''} onBlur={e=>saveMatchField(m,'venue',e.target.value)}/></label></td>
                           <td data-label="Trọng tài">
                             {tourStatus !== 'completed' ? (
                               <input
@@ -1711,12 +1721,12 @@ export default function AdminDashboard() {
                               m.ref || '—'
                             )}
                           </td>
-                          <td data-label="Thư ký phụ trách"><select className="select-dark" aria-label={`Thư ký phụ trách: ${m.home} - ${m.away}`} disabled={tourStatus==='completed'} value={m.assignedSecretary||''} onChange={async e=>{const username=e.target.value;const account=secretaryAccounts.find(a=>a.username===username);try{await update(ref(db,`matches/${m.id}`),{assignedSecretary:username,sec:account?.name||''});toast.success('Đã lưu phân công thư ký.');}catch(err){toast.error(err.message);}}}><option value="">Chưa phân công</option>{secretaryAccounts.filter(a=>!a.disabled||a.username===m.assignedSecretary).map(a=><option key={a.username} value={a.username}>{a.name}{a.disabled?' (đã khóa)':''}</option>)}</select><small className="text-dim">Tạo người mới ở mục Tài khoản thư ký.</small></td>
+                          <td data-label="Thư ký phụ trách"><select className="select-dark" aria-label={`Thư ký phụ trách: ${m.home} - ${m.away}`} disabled={tourStatus==='completed'} value={m.assignedSecretary||''} onChange={async e=>{const username=e.target.value;const account=secretaryAccounts.find(a=>a.username===username);try{await update(ref(db,`matches/${m.id}`),{assignedSecretary:username,sec:account?.name||''});toast.success('Đã lưu phân công thư ký.');}catch(err){toast.error(err.message);}}}><option value="">Chưa phân công</option>{secretaryAccounts.filter(a=>!a.disabled||a.username===m.assignedSecretary).map(a=><option key={a.username} value={a.username}>{a.name}{a.disabled?' (đã khóa)':''}</option>)}</select></td>
                           <td data-label="Trạng thái"><span className="badge badge-ghost">{m.status}</span></td>
                           <td data-label="Biên bản">
                             <div style={{ display: 'flex', gap: '4px' }}>
-                              <button className="btn ghost tiny" onClick={() => handleOpenReview(m)}>
-                                Xem / sửa biên bản
+                              <button className="btn ghost tiny" title="Xem / sửa biên bản trận đấu" onClick={() => handleOpenReview(m)}>
+                                Biên bản
                               </button>
                               {m.status === 'Đã xong' && (
                                 <button
@@ -1733,6 +1743,7 @@ export default function AdminDashboard() {
                           </td>
                         </tr>
                       ))}
+                      {!visibleSchedule.length&&<tr><td colSpan={9} className="text-center text-dim">Không có trận đấu trong bảng / vòng này.</td></tr>}
                     </tbody>
                   </table>
                 </div>
