@@ -33,6 +33,7 @@ import SignatureCanvas from '../components/SignatureCanvas';
 import MatchPrintReport from '../components/MatchPrintReport';
 import { useToast } from '../components/ToastContext';
 import {
+  numberMatchesBySchedule,
   formatDateTime,
   cleanPlayerName,
   calculateEventsGoals,
@@ -411,7 +412,7 @@ export default function RefereeDashboard() {
   // DATA LỌC & DANH BẠ
   // ==========================================
   const uniqueGroups = [...new Set(allMatches.map((m) => m.group))];
-  const filteredMatches = allMatches
+  const filteredMatches = numberMatchesBySchedule(allMatches)
     .filter(m => m.assignedSecretary === JSON.parse(localStorage.getItem('dpl_user') || '{}').username || JSON.parse(localStorage.getItem('dpl_user') || '{}').role === 'admin')
     .filter((m) => !scheduleFilter || m.group === scheduleFilter)
     .filter((m) => !searchScheduleTxt || m.home?.toLowerCase().includes(searchScheduleTxt.toLowerCase()) || m.away?.toLowerCase().includes(searchScheduleTxt.toLowerCase()));
@@ -531,7 +532,7 @@ export default function RefereeDashboard() {
                 <table className="dpl-table">
                   <thead>
                     <tr>
-                      <th>Vòng / Bảng</th>
+                      <th>STT trận</th>
                       <th>Cặp Đấu</th>
                       <th>Ngày Giờ</th>
                       <th>Trọng Tài</th>
@@ -555,7 +556,7 @@ export default function RefereeDashboard() {
                       return (
                         <tr key={m.id}>
                           <td>
-                            <span className="badge badge-ghost">{m.round || m.group}</span>
+                            <span className="badge badge-ghost">{m.matchNumber}</span>
                           </td>
                           <td style={{ fontWeight: '700' }}>
                             {m.home} <span className="text-dim">vs</span> {m.away}

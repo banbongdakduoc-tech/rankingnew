@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateGroupStandings, calculateEventsGoals, detectViolations, getTopScorers, generateRoundRobinMatches, generateKnockoutPairs, compareEvents, parseMatchMinute, formatMatchMinute, elapsedClock, evaluateShootout, resolveWinner, validatePlayers } from '../shared/tournament.js';
+import { numberMatchesBySchedule, calculateGroupStandings, calculateEventsGoals, detectViolations, getTopScorers, generateRoundRobinMatches, generateKnockoutPairs, compareEvents, parseMatchMinute, formatMatchMinute, elapsedClock, evaluateShootout, resolveWinner, validatePlayers } from '../shared/tournament.js';
 const m=(id,home,away,scoreA,scoreB,events=[])=>({id,home,away,scoreA,scoreB,events,status:'Đã xong',group:'A',date:`2026-10-0${id}T08:00:00Z`});
 const card=(id,detail,player='P',playerId='p')=>({id,type:'card',detail,team:'A',player,playerId,minute:5,period:1});
 const permutations=a=>a.length<=1?[a]:a.flatMap((x,i)=>permutations(a.filter((_,j)=>i!==j)).map(p=>[x,...p]));
@@ -28,4 +28,25 @@ test('Thẻ vàng trong trận không gộp thành hai vàng với thẻ ở lu�
 });
 test('Bù giờ hiệp phụ dùng đúng mốc 45 và 50 ở thể thức 20+20+5+5',()=>{
   assert.equal(formatMatchMinute(46*60,20,3,5).displayMinute,"45+1'");assert.equal(formatMatchMinute(52*60,20,4,5).displayMinute,"50+2'");
+});
+
+test('STT toàn giải liên tục theo lịch, gồm knockout và giữ số khi lọc', () => {
+  const games = [
+    {id:'final',group:'Vòng Knock-out',round:'Chung Kết',date:'2026-10-20T08:00:00Z'},
+    {id:'pending',group:'B',status:'Chờ duyệt',date:'2026-10-10T10:00:00+07:00'},
+    {id:'first',group:'A',date:'2026-10-10T09:00'},
+    {id:'semi',group:'Vòng Knock-out',round:'Bán Kết',date:'2026-10-19T08:00:00Z'},
+  ];
+  for (const input of permutations(games)) {
+    const numbered = numberMatchesBySchedule(input);
+    assert.deepEqual(numbered.map(m => [m.id,m.matchNumber]), [['first',1],['pending',2],['semi',3],['final',4]]);
+    assert.deepEqual(numbered.filter(m => m.status !== 'Chờ duyệt').map(m => m.matchNumber),[1,3,4]);
+  }
+  assert.equal(games[0].matchNumber,undefined);
+  assert.equal(numberMatchesBySchedule(games.map(m => m.id==='final'?{...m,date:'2026-10-09T08:00Z'}:m))[0].id,'final');
+});
+test('STT: trùng giờ ổn định, chưa xếp lịch ở cuối theo tiến trình knockout', () => {
+  const games = [{id:'final',group:'Vòng Knock-out',round:'Chung Kết'}, {id:'third',group:'Vòng Knock-out',round:'Tranh Hạng 3'}, {id:'semi',group:'Vòng Knock-out',round:'Bán Kết'}, {id:'qf',group:'Vòng Knock-out',round:'Tứ Kết'}, {id:'match_10',date:'2026-10-10T08:00Z'}, {id:'match_2',date:'2026-10-10T08:00Z'}, {id:'group',date:'invalid'}];
+  for (const input of [games,[...games].reverse()]) assert.deepEqual(numberMatchesBySchedule(input).map(m=>m.id),['match_2','match_10','group','qf','semi','third','final']);
+  assert.deepEqual(numberMatchesBySchedule([]),[]);
 });

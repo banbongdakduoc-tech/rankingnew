@@ -16,6 +16,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import {
+  numberMatchesBySchedule,
   calculateGroupStandings,
   getTopScorers,
   getDisciplineStats,
@@ -65,7 +66,7 @@ export default function PublicStandings() {
   const [statsPhase,setStatsPhase]=useState('all');
   useEffect(()=>{
     let active=true;
-    const apply=data=>{if(!active)return;setTourConfig(data.tourConfig);setTourStatus(data.tourStatus);setGroupsData(data.groupsData||[]);const list=Object.values(data.matches||{}).filter(m=>!['Chờ duyệt','Bị từ chối'].includes(m.status));setMatches(list);setPlayers(data.players||{});setSuspensions(data.suspensions||{});const requested=new URLSearchParams(window.location.search).get('match');if(requested)setViewingMatch(list.find(m=>m.id===requested)||null);};
+    const apply=data=>{if(!active)return;setTourConfig(data.tourConfig);setTourStatus(data.tourStatus);setGroupsData(data.groupsData||[]);const list=numberMatchesBySchedule(Object.values(data.matches||{})).filter(m=>!['Chờ duyệt','Bị từ chối'].includes(m.status));setMatches(list);setPlayers(data.players||{});setSuspensions(data.suspensions||{});const requested=new URLSearchParams(window.location.search).get('match');if(requested)setViewingMatch(list.find(m=>m.id===requested)||null);};
     const stop=onValue(ref(db),snap=>{const data=snap.val();if(!data)return;setSeasonHistory(data.seasonHistory||[]);if(!seasonId)apply(data);});
     if(seasonId)request(`/api/seasons/${encodeURIComponent(seasonId)}`).then(res=>{apply(res.data);setSeasonError('');}).catch(e=>{if(active)setSeasonError(e.message);});
     return()=>{active=false;stop();};
@@ -100,14 +101,14 @@ export default function PublicStandings() {
     .filter(m => !favorite || m.home === favorite || m.away === favorite)
     .filter((m) => (!selectedGroupFilter || m.group === selectedGroupFilter))
     .filter((m) => (!searchMatchTxt || m.home?.toLowerCase().includes(searchMatchTxt.toLowerCase()) || m.away?.toLowerCase().includes(searchMatchTxt.toLowerCase())))
-    .sort((a, b) => new Date(a.date || '9999-12-31') - new Date(b.date || '9999-12-31'));
+    .sort((a, b) => a.matchNumber - b.matchNumber);
 
   const completedMatches = matches
     .filter((m) => m.status === 'Đã xong')
     .filter(m => !favorite || m.home === favorite || m.away === favorite)
     .filter((m) => (!selectedGroupFilter || m.group === selectedGroupFilter))
     .filter((m) => (!searchMatchTxt || m.home?.toLowerCase().includes(searchMatchTxt.toLowerCase()) || m.away?.toLowerCase().includes(searchMatchTxt.toLowerCase())))
-    .sort((a, b) => new Date(b.date || '1970-01-01') - new Date(a.date || '1970-01-01'));
+    .sort((a, b) => a.matchNumber - b.matchNumber);
 
   // Thống kê cá nhân
   const phaseMatches=matches.filter(m=>statsPhase==='all'||(statsPhase==='ko')===(m.group==='Vòng Knock-out'));
@@ -493,7 +494,7 @@ export default function PublicStandings() {
                   <table className="dpl-table">
                     <thead>
                       <tr>
-                        <th>Vòng / Bảng</th>
+                        <th>STT trận</th>
                         <th>Cặp Đấu</th>
                         <th>Ngày & Giờ</th>
                         <th>Trọng Tài</th>
@@ -504,7 +505,7 @@ export default function PublicStandings() {
                       {upcomingMatches.map((m) => (
                         <tr key={m.id}>
                           <td>
-                            <span className="badge badge-ghost">{m.round || m.group}</span>
+                            <span className="badge badge-ghost">{m.matchNumber}</span>
                           </td>
                           <td>
                             <span style={{ fontWeight: '700', fontSize: '14.5px' }}>
@@ -549,7 +550,7 @@ export default function PublicStandings() {
                   <table className="dpl-table">
                     <thead>
                       <tr>
-                        <th>Vòng / Bảng</th>
+                        <th>STT trận</th>
                         <th>Cặp Đấu</th>
                         <th style={{ textAlign: 'center' }}>Tỉ Số</th>
                         <th>Ngày Đấu</th>
@@ -560,7 +561,7 @@ export default function PublicStandings() {
                       {completedMatches.map((m) => (
                         <tr key={m.id}>
                           <td>
-                            <span className="badge badge-ghost">{m.round || m.group}</span>
+                            <span className="badge badge-ghost">{m.matchNumber}</span>
                           </td>
                           <td>
                             <span style={{ fontWeight: '700' }}>

@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../components/ToastContext';
 import {
+  numberMatchesBySchedule,
   calculateGroupStandings,
   detectViolations,
   generateRoundRobinMatches,
@@ -834,7 +835,7 @@ export default function AdminDashboard() {
   const currentKnockoutFormat = tourConfig.knockoutFormat || 'quarter';
   const scheduleGroupLabel=group=>group==='Vòng Knock-out'?'Knockout':/^bảng\s/i.test(group||'')?group.replace(/^bảng/i,'Bảng'):/^[a-z]$/i.test(group||'')?`Bảng ${group.toUpperCase()}`:group||'Chưa xếp bảng';
   const scheduleGroups=[...new Set([...groupsData.map(g=>g.groupName),...matches.map(m=>m.group)].filter(Boolean))];
-  const visibleSchedule=matches.filter(m=>!scheduleGroup||m.group===scheduleGroup).slice().sort((a,b)=>(Date.parse(a.date)||Infinity)-(Date.parse(b.date)||Infinity));
+  const visibleSchedule=numberMatchesBySchedule(matches).filter(m=>!scheduleGroup||m.group===scheduleGroup);
   const qualifyCount = getQualifyingCount(currentKnockoutFormat, groupsData.length);
 
   // If in Print Mode, render full A4 report
@@ -1675,7 +1676,7 @@ export default function AdminDashboard() {
                   <table className="dpl-table admin-schedule">
                     <thead>
                       <tr>
-                        <th>Bảng</th>
+                        <th>STT trận</th>
                         <th>Cặp Đấu</th>
                         <th>Tỉ Số</th>
                         <th>Ngày giờ (VN)</th>
@@ -1689,7 +1690,7 @@ export default function AdminDashboard() {
                     <tbody>
                       {visibleSchedule.map((m) => (
                         <tr key={m.id}>
-                          <td data-label="Bảng"><span className="badge badge-ghost">{scheduleGroupLabel(m.group)}</span></td>
+                          <td data-label="STT trận"><span className="badge badge-ghost">{m.matchNumber}</span></td>
                           <td data-label="Cặp đấu" style={{ fontWeight: '700' }}>{m.home} vs {m.away}</td>
                           <td data-label="Tỉ số" className="text-accent font-bold">
                             {m.status === 'Đã xong' || m.status === 'Đang LIVE' ? `${m.scoreA} - ${m.scoreB}` : '—'}

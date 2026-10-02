@@ -231,3 +231,25 @@ export function kickoffInput(value) {
   if(!value)return '';
   try {const date=new Date(normalizeKickoff(value)),parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;}catch{return '';}
 }
+
+/** Global fixture numbers: assign before filtering by team, group, status or secretary. */
+export function numberMatchesBySchedule(matches) {
+  const kickoff = m => {
+    try { return m.date ? Date.parse(normalizeKickoff(m.date)) : Infinity; }
+    catch { return Infinity; }
+  };
+  const stage = m => {
+    if (m.group !== 'Vòng Knock-out') return 0;
+    const round = (m.round || '').toLowerCase();
+    if (round.includes('tứ kết')) return 1;
+    if (round.includes('bán kết')) return 2;
+    if (round.includes('hạng')) return 3;
+    if (round.includes('chung kết')) return 4;
+    return 1;
+  };
+  return [...matches].sort((a, b) => {
+    const at = kickoff(a), bt = kickoff(b);
+    if (at !== bt) return at < bt ? -1 : 1;
+    return stage(a) - stage(b) || String(a.id).localeCompare(String(b.id), 'en', { numeric: true });
+  }).map((m, index) => ({ ...m, matchNumber: index + 1 }));
+}
