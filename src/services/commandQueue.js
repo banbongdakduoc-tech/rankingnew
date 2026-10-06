@@ -12,9 +12,9 @@ export function createQueueFlusher({ entries, owner, canSend, send, accept, save
           if(!entry)break;
           try {const result=await send(entry.command);accept(result);await remove(entry.id);}
           catch(e) {
-            if(e.status===422) {entry.rejected=e.message;await save(entry);error(e);continue;}
-            if(e.status) {entry.conflict=e.message;entry.conflictStatus=e.status;await save(entry);error(e);if(e.status===401)break;}
-            else {error(e);break;}
+            if(e.status===422) {await remove(entry.id);error(e,entry);continue;}
+            if(e.status) {entry.conflict=e.message;entry.conflictStatus=e.status;await save(entry);error(e,entry);if(e.status===401)break;}
+            else {error(e,entry);break;}
           }
         }
       } finally {await settled();}

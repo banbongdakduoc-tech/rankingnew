@@ -1064,7 +1064,7 @@ export default function RefereeDashboard() {
                   </div>
                 </div>
 
-                {selectedMatch.group === 'Vòng Knock-out' && selectedMatch.scoreA === selectedMatch.scoreB && <ShootoutPanel match={{ ...selectedMatch, lineupA, lineupB }} players={allPlayers} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} onChange={async kicks => {
+                {selectedMatch.group === 'Vòng Knock-out' && selectedMatch.scoreA === selectedMatch.scoreB && <ShootoutPanel match={{ ...selectedMatch, lineupA, lineupB }} players={allPlayers} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} extraTimeMinutes={Number(tourConfig.extraTimeMinutes || 0)} onChange={async kicks => {
     try {
  await update(ref(db, `matches/${selectedMatch.id}`), { shootout: kicks }); setSelectedMatch(prev => ({ ...prev, shootout: kicks }));
     } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); throw error; }

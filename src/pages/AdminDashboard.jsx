@@ -1011,7 +1011,7 @@ export default function AdminDashboard() {
                       {reviewingMatch.resultType === 'forfeit' && <label className="form-label">Lý do quyết định<input className="input-dark" value={reviewingMatch.administrativeReason || ''} onChange={e => setReviewingMatch({ ...reviewingMatch, administrativeReason: e.target.value })}/></label>}
                       <label className="form-label">Ghi chú BTC (chỉ bắt buộc khi sửa nội dung hoặc thiếu chữ ký)<input className="input-dark" placeholder="Không sửa thông tin: để trống và duyệt" value={reviewingMatch.signatureException || ''} onChange={e => setReviewingMatch({ ...reviewingMatch, signatureException: e.target.value })}/></label>
                     </div>
-                    {reviewingMatch.group === 'Vòng Knock-out' && currentScoreA === currentScoreB && <ShootoutPanel match={reviewingMatch} players={players} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} onChange={kicks => { const result = { ...reviewingMatch, shootout: kicks }; setReviewingMatch({ ...result, advancingTeam: resolveWinner(result) }); }}/>}
+                    {reviewingMatch.group === 'Vòng Knock-out' && currentScoreA === currentScoreB && <ShootoutPanel match={reviewingMatch} players={players} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} extraTimeMinutes={Number(tourConfig.extraTimeMinutes || 0)} onChange={kicks => { const result = { ...reviewingMatch, shootout: kicks }; setReviewingMatch({ ...result, advancingTeam: resolveWinner(result) }); }}/>}
                     {/* 🏆 BẮT BUỘC: CHỌN ĐỘI GIÀNH QUYỀN ĐI TIẾP (KNOCK-OUT) - ĐẶT NGAY ĐẦU TRỰC QUAN */}
                     {reviewingMatch.group === 'Vòng Knock-out' && (
                       <div className="ko-winner-selector-box">

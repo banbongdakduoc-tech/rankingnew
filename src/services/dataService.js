@@ -47,6 +47,7 @@ export function onValue(reference,callback){const sub={path:reference.path,callb
 
 // Commands are saved to IndexedDB before network transmission, and retained after conflicts.
 let queueDB;
+const rejectedErrors=new Map();
 async function openQueue(){if(queueDB)return queueDB;queueDB=await new Promise((resolve,reject)=>{const req=indexedDB.open('dpl-command-queue-v2',2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('commands'))req.result.createObjectStore('commands',{keyPath:'id'});if(!req.result.objectStoreNames.contains('cache'))req.result.createObjectStore('cache',{keyPath:'id'});};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(new Error('Không mở được bộ nhớ nháp. Kiểm tra quyền lưu trữ trình duyệt.'));});return queueDB;}
 async function cacheState(method,value){const database=await openQueue();return new Promise((resolve,reject)=>{const tx=database.transaction('cache',method==='get'?'readonly':'readwrite'),store=tx.objectStore('cache'),req=method==='get'?store.get(value):store.put(value);let result;req.onsuccess=()=>result=req.result;tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);});}
 async function queueStore(method,data){const database=await openQueue();return new Promise((resolve,reject)=>{const tx=database.transaction('commands',method==='getAll'?'readonly':'readwrite'),store=tx.objectStore('commands');const req=method==='getAll'?store.getAll():method==='put'?store.put(data):store.delete(data);let result;req.onsuccess=()=>{result=req.result;};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);});}
@@ -58,7 +59,7 @@ export const flushQueue=createQueueFlusher({
   canSend:()=>!!token()&&navigator.onLine&&meta.connected,
   send:command=>request('/api/state/commands',{method:'POST',body:JSON.stringify({...command,clientNow:Date.now()})}),
   accept:result=>accept(result.data),save:entry=>queueStore('put',entry),remove:id=>queueStore('delete',id),
-  error:e=>status(e.status?{error:e.message}:{connected:false,error:'Thao tác đã lưu trên máy, đang chờ gửi lại.'}),
+  error:(e,entry)=>{if(e.status===422&&entry)rejectedErrors.set(entry.id,e.message);status(e.status?{error:e.message}:{connected:false,error:'Thao tác đã lưu trên máy, đang chờ gửi lại.'});},
   settled:updateQueueStatus
 });
 window.addEventListener('online',()=>{if(!socket)connect();flushQueue();});
@@ -70,7 +71,7 @@ export async function sendCommand(command,{offline=false}={}) {
   const earlier=(await queueStore('getAll')).filter(x=>x.owner===user().username&&!x.conflict&&!x.rejected).sort((a,b)=>b.createdAt-a.createdAt);
   if(command.kind==='patch') { command.predecessors={}; for(const id of Object.keys(command.versions||{})){const previous=earlier.find(x=>x.command.matchId===id || x.command.versions?.[id]!==undefined);if(previous)command.predecessors[id]=previous.command.id;} }
   const entry={id:command.id,owner:user().username,createdAt:Date.now(),command};await queueStore('put',entry);await updateQueueStatus();
-  await flushQueue();const remaining=(await queueStore('getAll')).find(x=>x.id===entry.id);if(remaining?.rejected||remaining?.conflict)throw new Error(remaining.rejected||remaining.conflict);return {queued:!!remaining};
+  await flushQueue();const rejected=rejectedErrors.get(entry.id);rejectedErrors.delete(entry.id);if(rejected)throw new Error(rejected);const remaining=(await queueStore('getAll')).find(x=>x.id===entry.id);if(remaining?.rejected||remaining?.conflict)throw new Error(remaining.rejected||remaining.conflict);return {queued:!!remaining};
 }
 function patchesFor(path,data,merge){
   if(merge && data && typeof data==='object' && !Array.isArray(data))return Object.fromEntries(Object.entries(data).map(([k,v])=>[path?`${path}/${k}`:k,v]));

@@ -276,3 +276,44 @@ export function shootoutRows(match, rounds = 5) {
   const home=active.filter(k=>k.team===match.home),away=active.filter(k=>k.team===match.away);
   return Array.from({length:Math.max(rounds,home.length,away.length)},(_,i)=>({attempt:i+1,home:home[i] || null,away:away[i] || null}));
 }
+
+// Same player restrictions for shootout selection and preflight validation.
+export function shootoutRestrictions(match, players, suspensions = {}, beforeSequence = Infinity) {
+  const blocked = new Map(), yellows = new Map();
+  for(const team of [match.home,match.away])for(const p of players[team] || []) {
+    const ban=suspensions[`${team}@@${p.id}`];
+    if(ban?.remainingMatches>0&&ban.matchId!==match.id)blocked.set(`${team}@@${p.id}`,'Treo giò');
+  }
+  for(const event of (match.events || []).filter(e=>!e.cancelled&&e.type==='card').slice().sort(compareEvents)) {
+    if(event.phase==='shootout'&&event.sequence>beforeSequence)continue;
+    const p=(players[event.team] || []).find(p=>event.playerId?p.id===event.playerId:`${p.num} - ${p.name}`===event.player||p.name===event.player);
+    if(!p)continue;
+    const key=`${event.team}@@${p.id}`;
+    if(['red','Đỏ','direct_red'].includes(event.detail))blocked.set(key,'Thẻ đỏ trực tiếp');
+    if(['yellow','Vàng','second_yellow_red'].includes(event.detail)) {
+      const phaseKey=`${key}@@${event.phase==='shootout'?'shootout':'play'}`;
+      const count=(yellows.get(phaseKey)||0)+1;yellows.set(phaseKey,count);
+      if(count>=2||event.detail==='second_yellow_red')blocked.set(key,'Thẻ vàng thứ hai');
+    }
+  }
+  return blocked;
+}
+export function validateShootoutDraft(match, kicks, players, suspensions = {}, rounds = 5, extraTimeMinutes = 0) {
+  if(kicks.some(k=>!k.cancelled&&k.result!=='retake')) {
+    if(!isKnockout(match)||Number(match.scoreA)!==Number(match.scoreB))throw new Error('Chỉ sút luân lưu khi hòa ở knockout.');
+    if(extraTimeMinutes>0&&match.clock?.period!==4)throw new Error('Hoàn thành hai hiệp phụ trước khi sút luân lưu.');
+  }
+  const ids=new Set(),cycles=new Map();
+  for(const kick of kicks) {
+    if(kick.cancelled||kick.result==='retake')continue;
+    if(!kick.id||ids.has(kick.id))throw new Error('Lượt luân lưu bị trùng.');ids.add(kick.id);
+    if(!(players[kick.team] || []).some(p=>p.id===kick.playerId))throw new Error('Người sút luân lưu không hợp lệ.');
+    const blocked=shootoutRestrictions(match,players,suspensions,kick.sequence || Infinity);
+    const reason=blocked.get(`${kick.team}@@${kick.playerId}`);if(reason)throw new Error(`Không được sút luân lưu: ${reason}.`);
+    const eligible=(players[kick.team] || []).filter(p=>!blocked.has(`${kick.team}@@${p.id}`));
+    const used=cycles.get(kick.team)||new Set();if(used.size===eligible.length)used.clear();
+    if(used.has(kick.playerId))throw new Error('Mọi cầu thủ đủ điều kiện phải sút trước khi một người sút lần nữa.');
+    used.add(kick.playerId);cycles.set(kick.team,used);
+  }
+  return evaluateShootout(kicks,match.home,match.away,rounds);
+}
