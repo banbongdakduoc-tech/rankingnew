@@ -24,8 +24,27 @@ export function staffState(data,user) {
   if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
   return out;
 }
+function reportContent(m) {
+  return [m.home,m.away,m.date,m.ref,m.sec,m.venue,m.events||[],m.scoreA,m.scoreB,m.shootout||[],m.penA,m.penB,m.lineupA||[],m.lineupB||[],m.secretaryNote||'',m.resultType||'played',m.administrativeReason||''];
+}
+const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// Firebase may reorder object keys. Empty optional penalty fields have one meaning.
+function canonical(value) {
+  if(Array.isArray(value))return value.map(canonical);
+  if(value && typeof value==='object')return Object.fromEntries(Object.keys(value).sort().filter(k=>value[k]!==undefined).map(k=>[k,canonical(value[k])]));
+  return value;
+}
 export function reportHash(m) {
-  return createHash('sha256').update(JSON.stringify([m.home,m.away,m.date,m.ref,m.sec,m.venue,m.events||[],m.scoreA,m.scoreB,m.shootout||[],m.penA,m.penB,m.lineupA||[],m.lineupB||[],m.secretaryNote||'',m.resultType||'played',m.administrativeReason||''])).digest('hex');
+  const content=reportContent(m);
+  content[10]=m.penA==null||m.penA===''?'':Number(m.penA);
+  content[11]=m.penB==null||m.penB===''?'':Number(m.penB);
+  return digest(canonical(content));
+}
+function matchesSignedReport(m) {
+  if(m.signatureHash===reportHash(m))return true;
+  // Compatibility with reports signed before canonical hashes were introduced.
+  const values=v=>v==null||v===''?[undefined,null,'']:[v];
+  return values(m.penA).some(penA=>values(m.penB).some(penB=>m.signatureHash===digest(reportContent({...m,penA,penB}))));
 }
 export function canOperate(m,user) { return user.role==='admin' || user.role==='referee' && m.assignedSecretary===user.username; }
 function validateMatch(m,state,{approval=false,submission=false}={}) {
@@ -109,7 +128,7 @@ function validateMatch(m,state,{approval=false,submission=false}={}) {
     if(!['home','away','referee'].every(k=>(/^data:image\/png;base64,iVBORw0KGgo/.test(m.signatures?.[k]||'') && m.signatures[k].length<=200000))) {
       if(!m.signatureException?.trim())fail('Cần đủ ba chữ ký hoặc BTC xác nhận ngoại lệ có lý do.');
     }
-    if(approval && m.signatureHash && m.signatureHash!==reportHash(m) && !m.signatureException?.trim())fail('Nội dung đã thay đổi sau khi ký. Cần ký lại hoặc BTC ghi lý do ngoại lệ.');
+    if(approval && m.signatureHash && !matchesSignedReport(m) && !m.signatureException?.trim())fail('Nội dung đã thay đổi sau khi ký. Cần ký lại hoặc BTC ghi lý do ngoại lệ.');
   }
   return m;
 }

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { applyCommand, publicState, staffState, reportHash, exportBackup, validateBackup } from '../server/services/stateEngine.js';
 const admin={username:'admin',role:'admin'},staff={username:'sec',role:'referee'},other={username:'other',role:'referee'};
@@ -111,4 +112,28 @@ test('Luân lưu không cần điểm danh, nhưng vẫn cấm cầu thủ bị 
   const next=applyCommand(s,command({'matches/m/shootout':[kick]},s),staff);assert.equal(next.matches.m.penA,1);
   s.matches.m.events=[{...event,type:'card',detail:'direct_red',sequence:50}];
   assert.throws(()=>applyCommand(s,command({'matches/m/shootout':[kick]},s),staff),/đủ điều kiện/);
+});
+
+const approveAsUI = (s, extra={}) => applyCommand(s,command({'matches/m/status':'Đã xong','matches/m/scoreA':s.matches.m.scoreA,'matches/m/scoreB':s.matches.m.scoreB,'matches/m/penA':s.matches.m.penA ?? '', 'matches/m/penB':s.matches.m.penB ?? '', 'matches/m/events':s.matches.m.events, 'matches/m/shootout':s.matches.m.shootout || [], 'matches/m/resultType':s.matches.m.resultType || 'played','matches/m/administrativeReason':s.matches.m.administrativeReason || '', 'matches/m/signatureException':'',...extra},s),admin);
+const legacyReportHash=m=>createHash('sha256').update(JSON.stringify([m.home,m.away,m.date,m.ref,m.sec,m.venue,m.events||[],m.scoreA,m.scoreB,m.shootout||[],m.penA,m.penB,m.lineupA||[],m.lineupB||[],m.secretaryNote||'',m.resultType||'played',m.administrativeReason||''])).digest('hex');
+test('BTC duyệt không sửa, luân lưu thiếu/null/trống: không cần ghi chú',()=>{
+  for(const empty of [undefined,null,'']) {
+    const s=submitted();s.matches.m.penA=empty;s.matches.m.penB=empty;
+    for(const hash of [reportHash(s.matches.m),legacyReportHash(s.matches.m)]) {
+      s.matches.m.signatureHash=hash;
+      const next=approveAsUI(s);assert.equal(next.matches.m.status,'Đã xong');assert.equal(next.matches.m.signatureException,'');
+      assert.throws(()=>approveAsUI(s,{'matches/m/events':[{...event,minute:12}]}),/sau khi ký/);
+    }
+  }
+});
+test('Đảo thứ tự key như Firebase không thay nội dung ký',()=>{
+  const s=submitted();const reorder=v=>Array.isArray(v)?v.map(reorder):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().reverse().map(k=>[k,reorder(v[k])])):v;
+  s.matches.m=reorder(s.matches.m);
+  assert.equal(approveAsUI(s).matches.m.status,'Đã xong');
+  assert.throws(()=>approveAsUI(s,{'matches/m/secretaryNote':'BTC sửa nội dung'}),/sau khi ký/);
+  assert.equal(approveAsUI(s,{'matches/m/events':[{...event,minute:12}],'matches/m/signatureException':'Đối chiếu phút ghi bàn với trọng tài'}).matches.m.status,'Đã xong');
+});
+test('Không sửa kết quả knockout, tự xác định winner: không cần ghi chú',()=>{
+  const s=submitted();s.matches.m.group='Vòng Knock-out';s.matches.m.signatureHash=reportHash(s.matches.m);
+  assert.equal(approveAsUI(s).matches.m.advancingTeam,'A');
 });
