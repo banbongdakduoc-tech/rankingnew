@@ -2,6 +2,8 @@
 
 Giữ giao diện Stadium nền tối, xanh neon/vàng của dự án. Ba cổng: khán giả `/`, thư ký `/thuky`, BTC `/btc`.
 
+[Hướng dẫn sử dụng theo từng cổng và nhánh knockout](docs/HUONG-DAN-SU-DUNG-DPL.md).
+
 ## Chạy và kiểm tra
 
 Node.js 22.12+ hoặc 24, `npm ci`, `npm run check`. Frontend `npm run dev`; backend `npm run server`. Cấu hình theo `.env.example` và [hướng dẫn triển khai](DEPLOY_GUIDE.md).
@@ -15,7 +17,7 @@ Demo local tách khỏi giải thật:
 ## Hành vi chính
 
 - Server xác thực JWT, bcrypt và quyền theo trận được phân công. Frontend không đọc/ghi trực tiếp Firebase. API công khai không có tài khoản, chữ ký hay ghi chú riêng.
-- BXH chính thức chỉ dùng trận được duyệt. Khán giả có thể bật BXH tạm tính và xem bảng phụ đối đầu nhiều đội.
+- BXH chính thức chỉ dùng trận được duyệt. Khán giả xem bảng phụ đối đầu nhiều đội; không có chế độ BXH tạm tính ở cổng khán giả.
 - Event có ID, phút/hiệp/bù giờ; phản lưới tính cho đối phương; luân lưu lưu riêng từng lượt. Hai vàng cùng trận chuẩn hóa thành truất quyền, tách khỏi tích lũy qua trận.
 - Nháp thư ký lưu IndexedDB/localStorage theo tài khoản. F5 khôi phục đồng hồ mốc thời gian, sự kiện và chữ ký. Kết nối lại gửi hàng đợi có chống lặp, hiển thị xung đột để xử lý. Nộp/duyệt cần online.
 - Ba chữ ký gắn với nội dung biên bản. BTC xử lý ngoại lệ có lý do; mở lại có lưu phiên bản, khóa nhánh phụ thuộc và chặn khi vòng sau đã bắt đầu.

@@ -317,3 +317,14 @@ export function validateShootoutDraft(match, kicks, players, suspensions = {}, r
   }
   return evaluateShootout(kicks,match.home,match.away,rounds);
 }
+
+// Bracket position follows the round label, independently of kickoff/STT/Firebase order.
+export function orderKnockoutRound(matches) {
+  const seed=m=>Number(m.round?.match(/\s(\d+)$/)?.[1]) || Infinity;
+  return [...matches].sort((a,b)=>seed(a)-seed(b)||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
+}
+export function disciplineMatchSource(matches, record) {
+  const match=numberMatchesBySchedule(matches).find(m=>m.id===record.matchId);
+  const event=match?.events?.find(e=>e.id===record.eventId);
+  return {id:record.matchId,number:match?.matchNumber,name:match?`${match.home} vs ${match.away}`:record.matchName||'Không còn trận nguồn trong lịch hiện hành',round:match?.round||record.matchRound||'',date:match?.date||record.matchDate||'',minute:event?.displayMinute||record.eventMinute||'',match};
+}

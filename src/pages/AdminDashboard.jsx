@@ -4,6 +4,7 @@ import { chooseAvatarImage } from '../services/avatarService';
 import { useState, useEffect } from 'react';
 import { ref, set, update, onValue } from '../services/dataService';
 import { db, reopenMatch, resetTournament, sendCommand } from '../services/dataService';
+import DisciplineMatchSource from '../components/DisciplineMatchSource';
 import AdminTools from '../components/AdminTools';
 import SecretaryAccounts from '../components/SecretaryAccounts';
 import TournamentIdentity from '../components/TournamentIdentity';
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../components/ToastContext';
 import {
+  orderKnockoutRound,
   numberMatchesBySchedule,
   calculateGroupStandings,
   detectViolations,
@@ -190,8 +192,9 @@ export default function AdminDashboard() {
       updates[`handledViolations/${v.key}`] = {reason:v.reason,at:new Date().toISOString()};
       const duration = Number(await askText('Số trận cấm thi đấu:', v.matches || 1));
       if (!Number.isInteger(duration) || duration < 1 || duration > 20) throw new Error('Số trận cấm phải từ 1 đến 20.');
+      const source=matches.find(m=>m.id===v.matchId),event=source?.events?.find(e=>e.id===v.eventId);
       const previous=suspensions[v.pKey];const total=duration+Number(previous?.remainingMatches || 0);if(total>20)throw new Error('Tổng án tối đa 20 trận.');
-      updates[`suspensions/${v.pKey}`] = { history:[...(previous?.history || []),...(previous?[{...previous,history:undefined}]:[])], reason: v.reason, playerId: v.playerId, player: v.player, team: v.team, matchId: v.matchId, violationKey: v.key, remainingMatches: total, totalMatches: total, servedMatchIds: [], createdAt: new Date().toISOString() };
+      updates[`suspensions/${v.pKey}`] = { history:[...(previous?.history || []),...(previous?[{...previous,history:undefined}]:[])], reason: v.reason, playerId: v.playerId, player: v.player, team: v.team, matchId: v.matchId, matchName:v.matchName, matchRound:source?.round||'', matchDate:source?.date||'', eventId:v.eventId, eventMinute:event?.displayMinute||'', violationKey: v.key, remainingMatches: total, totalMatches: total, servedMatchIds: [], createdAt: new Date().toISOString() };
       await update(ref(db, '/'), updates);
       toast.success(`Đã áp dụng án phạt treo giò với ${v.player}`);
     }
@@ -339,10 +342,10 @@ export default function AdminDashboard() {
   // 5. QUẢN LÝ TIẾN TRÌNH VÒNG KNOCK-OUT
   // ==========================================
   const koMatches = matches.filter((m) => m.group === 'Vòng Knock-out');
-  const qfMatches = koMatches.filter((m) => m.round?.includes('Tứ Kết'));
-  const sfMatches = koMatches.filter((m) => m.round?.includes('Bán Kết'));
-  const finalMatches = koMatches.filter((m) => m.round?.includes('Chung Kết'));
-  const thirdMatches = koMatches.filter((m) => m.round?.includes('Tranh Hạng 3'));
+  const qfMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Tứ Kết')));
+  const sfMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Bán Kết')));
+  const finalMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Chung Kết')));
+  const thirdMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Tranh Hạng 3')));
 
   const qfDoneCount = qfMatches.filter((m) => m.status === 'Đã xong' && m.advancingTeam).length;
   const sfDoneCount = sfMatches.filter((m) => m.status === 'Đã xong' && m.advancingTeam).length;
@@ -1429,7 +1432,7 @@ export default function AdminDashboard() {
                             <td>
                               <b>{v.player}</b> <span className="text-dim">({v.team})</span>
                             </td>
-                            <td className="text-red font-bold" style={{ fontSize: '12px' }}>{v.reason}</td>
+                            <td><div className="text-red font-bold" style={{fontSize:'12px'}}>{v.reason}</div><DisciplineMatchSource matches={matches} record={v} onView={setPrintingMatch}/></td>
                             <td>
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <button className="btn danger tiny" onClick={() => handleBanPlayer(v)}>
@@ -1481,6 +1484,7 @@ export default function AdminDashboard() {
                       <div>
                         <div style={{ fontWeight: '700', color: 'var(--accent-red)' }}>{data.player || player}</div>
                         <div className="text-dim" style={{ fontSize: '11px' }}>{team} • {data.reason} · Còn {data.remainingMatches ?? 1} trận {data.needsReview ? '· Cần xét lại căn cứ' : ''}</div>
+                        <DisciplineMatchSource matches={matches} record={data} onView={setPrintingMatch}/>
                       </div>
                       <button
                         className="btn ghost tiny"

@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { Trophy, Award, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { formatDateTime } from '../services/tournamentService';
+import { formatDateTime, orderKnockoutRound } from '../services/tournamentService';
 
 export default function KnockoutBracket({
   matches = [],
@@ -11,10 +11,10 @@ export default function KnockoutBracket({
   const koMatches = matches.filter((m) => m.group === 'Vòng Knock-out');
 
   // Lọc theo từng vòng
-  const qfMatches = koMatches.filter((m) => m.round?.includes('Tứ Kết'));
-  const sfMatches = koMatches.filter((m) => m.round?.includes('Bán Kết'));
-  const thirdMatches = koMatches.filter((m) => m.round?.includes('Tranh Hạng 3'));
-  const finalMatches = koMatches.filter((m) => m.round?.includes('Chung Kết'));
+  const qfMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Tứ Kết')));
+  const sfMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Bán Kết')));
+  const thirdMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Tranh Hạng 3')));
+  const finalMatches = orderKnockoutRound(koMatches.filter((m) => m.round?.includes('Chung Kết')));
 
   // Kiểm tra nhà vô địch
   const grandFinal = finalMatches[0];
