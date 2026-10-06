@@ -1,4 +1,4 @@
-import { compareEvents } from '../services/tournamentService';
+import { compareEvents, shootoutSummary } from '../services/tournamentService';
 // src/components/MatchPrintReport.jsx
 import { Printer, ArrowLeft } from 'lucide-react';
 import { formatDateTime, cleanPlayerName } from '../services/tournamentService';
@@ -14,6 +14,7 @@ export default function MatchPrintReport({
     window.print();
   };
 
+  const {penA,penB}=shootoutSummary(match,tourConfig.shootoutRounds || match.shootoutRounds || 5);
   const events = (match.events || []).filter(e => !e.cancelled).slice().sort(compareEvents);
   const goalEvents = events.filter((e) => e.type === 'goal');
   const cardEvents = events.filter((e) => e.type === 'card');
@@ -94,9 +95,9 @@ export default function MatchPrintReport({
           </div>
         </div>
 
-        {match.penA !== undefined && match.penA !== '' && (
+        {penA !== '' && penB !== '' && (
           <div className="doc-pen-note">
-            Tỉ số Luân lưu (Penalty Shootout): <b>{match.home} ({match.penA}) - ({match.penB}) {match.away}</b>
+            Tỉ số Luân lưu (Penalty Shootout): <b>{match.home} ({penA}) - ({penB}) {match.away}</b>
             {match.advancingTeam && ` - Đội giành quyền đi tiếp: ${match.advancingTeam}`}
           </div>
         )}

@@ -2,7 +2,7 @@ import { askText } from '../services/promptService';
 // src/pages/RefereeDashboard.jsx
 import { useState, useEffect, useRef } from 'react';
 import { ref, onValue, update } from '../services/dataService';
-import { db, syncSnapshot, sendCommand } from '../services/dataService';
+import { db, syncSnapshot, sendCommand, flushQueue } from '../services/dataService';
 import { readDraft, saveDraft, clearDraft } from '../services/drafts';
 import ShootoutPanel from '../components/ShootoutPanel';
 import {
@@ -33,6 +33,7 @@ import SignatureCanvas from '../components/SignatureCanvas';
 import MatchPrintReport from '../components/MatchPrintReport';
 import { useToast } from '../components/ToastContext';
 import {
+  shootoutSummary,
   numberMatchesBySchedule,
   formatDateTime,
   cleanPlayerName,
@@ -91,8 +92,8 @@ export default function RefereeDashboard() {
 
   // Step 4 Live Events, Score & Realtime Timer
   const [events, setEvents] = useState(savedDraft?.events ?? []);
-  const [penA, setPenA] = useState(savedDraft?.penA ?? '');
-  const [penB, setPenB] = useState(savedDraft?.penB ?? '');
+  const {penA,penB} = shootoutSummary(selectedMatch || {},tourConfig.shootoutRounds || 5);
+
 
   // Realtime Timer Clock States
   const halfDuration = Number(tourConfig.halfDuration) || 20; // Số phút 1 hiệp do BTC set
@@ -143,7 +144,7 @@ export default function RefereeDashboard() {
       if (syncSnapshot().pending || syncSnapshot().conflicts.length) return;
       setSelectedMatch(previous => mergeMatchDraft(previous,current));
       setEvents((current.events || []).filter(e => !e.cancelled));
-      setPenA(current.penA ?? ''); setPenB(current.penB ?? '');
+
       if (current.clock) { setClock(current.clock); setMatchPeriod(current.clock.period); setIsTimerRunning(current.clock.running); }
     });
   }, [selectedMatch?.id]);
@@ -185,8 +186,8 @@ export default function RefereeDashboard() {
     setEvents((match.events || []).filter(e => !e.cancelled));
     const restoredClock = match.clock || { elapsed: 0, running: false, period: 1 };
     setClock(restoredClock); setTimerSeconds(elapsedClock(restoredClock)); setMatchPeriod(restoredClock.period); setIsTimerRunning(restoredClock.running);
-    setPenA(match.penA ?? '');
-    setPenB(match.penB ?? '');
+
+
     setSecretaryNote(match.secretaryNote || '');
 
     // Nếu trận đang LIVE hoặc bị từ chối -> nhảy ngay đến bước 4 để tiếp tục
@@ -375,9 +376,12 @@ export default function RefereeDashboard() {
 
   // Nộp biên bản Bước 5
   const handleSubmitReport = async () => {
-    if (syncSnapshot().pending || syncSnapshot().conflicts.length) { toast.warning('Gửi hết thao tác nháp và giải quyết xung đột trước khi nộp.'); return; }
     setIsSubmitting(true);
     try {
+      await flushQueue();
+      const sync=syncSnapshot();
+      if(sync.conflicts.length)throw new Error(`Có ${sync.conflicts.length} thao tác xung đột. Mở chấm trạng thái cuối trang để đối chiếu trước khi nộp.`);
+      if(sync.pending)throw new Error(`Còn ${sync.pending} thao tác chưa gửi. Kiểm tra kết nối và thử nộp lại.`);
       const sigA = sigRefA.current ? sigRefA.current.getDataUrl() : '';
       const sigB = sigRefB.current ? sigRefB.current.getDataUrl() : '';
       const sigRef = sigRefReferee.current ? sigRefReferee.current.getDataUrl() : '';
@@ -1063,7 +1067,7 @@ export default function RefereeDashboard() {
                 {selectedMatch.group === 'Vòng Knock-out' && selectedMatch.scoreA === selectedMatch.scoreB && <ShootoutPanel match={{ ...selectedMatch, lineupA, lineupB }} players={allPlayers} suspensions={suspensions} rounds={tourConfig.shootoutRounds || 5} onChange={async kicks => {
     try {
  await update(ref(db, `matches/${selectedMatch.id}`), { shootout: kicks }); setSelectedMatch(prev => ({ ...prev, shootout: kicks }));
-    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
+    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); throw error; }
 }}/>}
               </div>
 

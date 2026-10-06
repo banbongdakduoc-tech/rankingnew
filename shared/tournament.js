@@ -253,3 +253,26 @@ export function numberMatchesBySchedule(matches) {
     return stage(a) - stage(b) || String(a.id).localeCompare(String(b.id), 'en', { numeric: true });
   }).map((m, index) => ({ ...m, matchNumber: index + 1 }));
 }
+
+// Never display a stale saved total when detailed shootout kicks are available.
+export function shootoutSummary(match = {}, rounds = match.shootoutRounds || 5) {
+  if(!match.shootout?.length)return {penA:match.penA ?? '',penB:match.penB ?? '',winner:''};
+  try {return evaluateShootout(match.shootout,match.home,match.away,rounds);}
+  catch(e){return {penA:'',penB:'',winner:'',error:e.message};}
+}
+export function shootoutUsedPlayers(kicks, team, eligibleIds) {
+  const eligible=new Set(eligibleIds),used=new Set();
+  for(const kick of kicks || []) {
+    if(kick.team!==team||kick.cancelled||kick.result==='retake'||!eligible.has(kick.playerId))continue;
+    if(used.size===eligible.size)used.clear();
+    used.add(kick.playerId);
+  }
+  if(used.size===eligible.size)used.clear();
+  return used;
+}
+
+export function shootoutRows(match, rounds = 5) {
+  const active=(match.shootout || []).filter(k=>!k.cancelled&&k.result!=='retake');
+  const home=active.filter(k=>k.team===match.home),away=active.filter(k=>k.team===match.away);
+  return Array.from({length:Math.max(rounds,home.length,away.length)},(_,i)=>({attempt:i+1,home:home[i] || null,away:away[i] || null}));
+}

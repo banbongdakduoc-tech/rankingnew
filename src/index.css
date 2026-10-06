@@ -1962,3 +1962,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   .schedule-filter-bar .select-dark { width:100%; }
   .admin-schedule td:first-child, .admin-schedule th:first-child { position:sticky; left:0; z-index:1; background:var(--bg-secondary); box-shadow:1px 0 var(--border-subtle); }
 }
+
+.shootout-team-table { border:1px solid var(--border-subtle); border-radius:var(--radius-md); overflow:hidden; }
+.shootout-team-table table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.shootout-team-table th, .shootout-team-table td { padding:12px; border-bottom:1px solid var(--border-subtle); text-align:left; vertical-align:middle; overflow-wrap:anywhere; }
+.shootout-team-table thead th { background:var(--bg-tertiary); font-size:14px; }
+.shootout-team-table th:first-child { width:64px; text-align:center; }
+.shootout-team-table thead span, .shootout-team-table td span, .shootout-team-table small { display:block; }
+.shootout-team-table thead span { margin-top:4px; font-size:12px; }
+.shootout-team-table .shootout-player { margin-bottom:6px; font-size:13px; }
+.shootout-team-table small { font-size:10px; color:var(--text-dim); }
+.shootout-team-table tbody tr:last-child > * { border-bottom:0; }
+@media(max-width:600px) { .shootout-team-table th, .shootout-team-table td { padding:10px 7px; font-size:12px; }.shootout-team-table th:first-child {width:42px;}.shootout-team-table .shootout-player {font-size:12px;} }

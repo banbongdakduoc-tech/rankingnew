@@ -1,11 +1,12 @@
 import { io } from 'socket.io-client';
+import { createQueueFlusher } from './commandQueue';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const skewKey=`dpl-server-skew-${API}`;
 let timeSkew=Number(localStorage.getItem(skewKey)) || 0;
 export const serverTimeOffset=()=>timeSkew;
 export const db = Object.freeze({});
-let state = {}, loaded = false, socket, flushing = false, connecting = false;
+let state = {}, loaded = false, socket, connecting = false;
 const subscriptions = new Set(), metaListeners = new Set();
 let meta = { connected:false, loading:true, pending:0, conflicts:[], error:'', updatedAt:null };
 const token = () => localStorage.getItem('dpl_token');
@@ -49,30 +50,27 @@ let queueDB;
 async function openQueue(){if(queueDB)return queueDB;queueDB=await new Promise((resolve,reject)=>{const req=indexedDB.open('dpl-command-queue-v2',2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('commands'))req.result.createObjectStore('commands',{keyPath:'id'});if(!req.result.objectStoreNames.contains('cache'))req.result.createObjectStore('cache',{keyPath:'id'});};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(new Error('Không mở được bộ nhớ nháp. Kiểm tra quyền lưu trữ trình duyệt.'));});return queueDB;}
 async function cacheState(method,value){const database=await openQueue();return new Promise((resolve,reject)=>{const tx=database.transaction('cache',method==='get'?'readonly':'readwrite'),store=tx.objectStore('cache'),req=method==='get'?store.get(value):store.put(value);let result;req.onsuccess=()=>result=req.result;tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);});}
 async function queueStore(method,data){const database=await openQueue();return new Promise((resolve,reject)=>{const tx=database.transaction('commands',method==='getAll'?'readonly':'readwrite'),store=tx.objectStore('commands');const req=method==='getAll'?store.getAll():method==='put'?store.put(data):store.delete(data);let result;req.onsuccess=()=>{result=req.result;};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);});}
-async function updateQueueStatus(){const entries=await queueStore('getAll');const mine=entries.filter(x=>x.owner===user()?.username);status({pending:mine.filter(x=>!x.conflict).length,conflicts:mine.filter(x=>x.conflict)}); if (loaded) publish();}
+async function updateQueueStatus(){const entries=await queueStore('getAll');const mine=entries.filter(x=>x.owner===user()?.username);status({pending:mine.filter(x=>!x.conflict&&!x.rejected).length,conflicts:mine.filter(x=>x.conflict&&!x.rejected),rejections:mine.filter(x=>x.rejected)}); if (loaded) publish();}
 export async function discardConflict(id){await queueStore('delete',id);await updateQueueStatus();}
 export async function exportLocalQueue(){return (await queueStore('getAll')).filter(x=>x.owner===user()?.username);}
-export async function flushQueue(){
-  if(flushing||!token()||!navigator.onLine||!meta.connected)return;
-  flushing=true;
-  try {
-    const commands=(await queueStore('getAll')).filter(x=>x.owner===user()?.username && !x.conflict).sort((a,b)=>a.createdAt-b.createdAt);
-    for(const entry of commands){
-      try{const result=await request('/api/state/commands',{method:'POST',body:JSON.stringify({...entry.command,clientNow:Date.now()})});accept(result.data);await queueStore('delete',entry.id);}
-      catch(e){if(e.status){entry.conflict=e.message;await queueStore('put',entry);status({error:e.message});if(e.status===401)break;}else {status({connected:false,error:'Thao tác đã lưu trên máy, đang chờ gửi lại.'});break;}}
-    }
-  } finally {flushing=false;await updateQueueStatus();}
-}
+export const flushQueue=createQueueFlusher({
+  entries:()=>queueStore('getAll'),owner:()=>user()?.username,
+  canSend:()=>!!token()&&navigator.onLine&&meta.connected,
+  send:command=>request('/api/state/commands',{method:'POST',body:JSON.stringify({...command,clientNow:Date.now()})}),
+  accept:result=>accept(result.data),save:entry=>queueStore('put',entry),remove:id=>queueStore('delete',id),
+  error:e=>status(e.status?{error:e.message}:{connected:false,error:'Thao tác đã lưu trên máy, đang chờ gửi lại.'}),
+  settled:updateQueueStatus
+});
 window.addEventListener('online',()=>{if(!socket)connect();flushQueue();});
 setInterval(()=>{if(!socket&&!connecting&&navigator.onLine&&subscriptions.size)connect();},10000);
 export async function sendCommand(command,{offline=false}={}) {
   command={...command,id:command.id || crypto.randomUUID()};
   if(!token())throw new Error('Đăng nhập lại trước khi lưu.');
   if(!offline){if(!meta.connected||!navigator.onLine)throw new Error('Cần kết nối máy chủ cho thao tác này.');await flushQueue();if(meta.pending||meta.conflicts.length)throw new Error('Giải quyết thao tác chờ gửi hoặc xung đột trước khi tiếp tục.');const result=await request('/api/state/commands',{method:'POST',body:JSON.stringify({...command,clientNow:Date.now()})});accept(result.data);return {queued:false};}
-  const earlier=(await queueStore('getAll')).filter(x=>x.owner===user().username&&!x.conflict).sort((a,b)=>b.createdAt-a.createdAt);
+  const earlier=(await queueStore('getAll')).filter(x=>x.owner===user().username&&!x.conflict&&!x.rejected).sort((a,b)=>b.createdAt-a.createdAt);
   if(command.kind==='patch') { command.predecessors={}; for(const id of Object.keys(command.versions||{})){const previous=earlier.find(x=>x.command.matchId===id || x.command.versions?.[id]!==undefined);if(previous)command.predecessors[id]=previous.command.id;} }
   const entry={id:command.id,owner:user().username,createdAt:Date.now(),command};await queueStore('put',entry);await updateQueueStatus();
-  await flushQueue();const remaining=(await queueStore('getAll')).find(x=>x.id===entry.id);if(remaining?.conflict)throw new Error(remaining.conflict);return {queued:!!remaining};
+  await flushQueue();const remaining=(await queueStore('getAll')).find(x=>x.id===entry.id);if(remaining?.rejected||remaining?.conflict)throw new Error(remaining.rejected||remaining.conflict);return {queued:!!remaining};
 }
 function patchesFor(path,data,merge){
   if(merge && data && typeof data==='object' && !Array.isArray(data))return Object.fromEntries(Object.entries(data).map(([k,v])=>[path?`${path}/${k}`:k,v]));
