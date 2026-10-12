@@ -21,11 +21,12 @@ test('API thực: auth, public DTO, quyền, validation, đồng thời, backup 
   await t.test('Event sai bị chặn và dữ liệu không đổi',async()=>{const before=db.getAll();const result=await call('/api/state/commands',{id:'invalid',kind:'events',matchId:'m',baseVersion:1,add:[{...event('bad'),team:'C'}]},staff);assert.equal(result.status,422);assert.deepEqual(db.getAll(),before);});
   await t.test('Backup BTC riêng, không tài khoản; staff bị chặn',async()=>{assert.equal((await call('/api/backup/export',null,staff)).status,403);const r=await call('/api/backup/export',null,admin);assert.equal(r.status,200);assert.equal(r.data.schemaVersion,2);assert.equal(r.data.accounts,undefined);});
   await t.test('Chỉ admin tạo thư ký: bcrypt, trùng tên, đồng thời và không lộ mật khẩu',async()=>{
-    const body={username:'new_sec',name:'Thư ký mới',password:'test-new-secretary-password',role:'admin'};
+    const body={username:'new_sec',name:'Thư ký mới',password:'test-new-secretary-password',role:'referee'};
     assert.equal((await call('/api/auth/accounts',body)).status,401);
     assert.equal((await call('/api/auth/accounts',body,staff)).status,403);
     assert.equal((await call('/api/auth/accounts',{...body,password:'short'},admin)).status,422);
     assert.equal((await call('/api/auth/accounts',{...body,username:'__proto__'},admin)).status,422);
+    assert.equal((await call('/api/auth/accounts',{...body,role:'admin'},admin)).status,422);
     const results=await Promise.all([call('/api/auth/accounts',body,admin),call('/api/auth/accounts',body,admin)]);
     assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);
     const account=db.get('accounts').new_sec;assert.equal(account.role,'referee');assert.equal(account.password,undefined);assert.ok(await bcrypt.compare(body.password,account.passwordHash));

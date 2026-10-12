@@ -88,7 +88,7 @@ const SAMPLE_JSON_SNIPPET = `[
   }
 ]`;
 
-export default function AdminDashboard() {
+export default function AdminDashboard({reviewOnly=false}) {
   const toast = useToast();
   const [adminTab, setAdminTab] = useState('dieuhanh'); // 'dieuhanh', 'cauthu', 'xembxh'
 
@@ -241,8 +241,8 @@ export default function AdminDashboard() {
     if (tourConfig.format === 'league') {
       initialGroups.push({ groupName: 'Bảng Tổng (League)', teams: [] });
     } else {
-      if (tourConfig.numGroups < 2) {
-        toast.warning('Thể thức chia bảng phải có ít nhất 2 bảng!');
+      if (![1,2,4].includes(Number(tourConfig.numGroups))) {
+        toast.warning('Thể thức chia bảng hỗ trợ 1, 2 hoặc 4 bảng!');
         return;
       }
       const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -251,9 +251,7 @@ export default function AdminDashboard() {
       }
     }
 
-    await set(ref(db, 'tourConfig'), tourConfig);
-    await set(ref(db, 'groupsData'), initialGroups);
-    await set(ref(db, 'tourStatus'), 'setup_teams');
+    await update(ref(db), {tourConfig,groupsData:initialGroups,tourStatus:'setup_teams'});
     toast.success('Đã khởi tạo cấu hình giải đấu!');
 
     } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
@@ -841,58 +839,7 @@ export default function AdminDashboard() {
   const visibleSchedule=numberMatchesBySchedule(matches).filter(m=>!scheduleGroup||m.group===scheduleGroup);
   const qualifyCount = getQualifyingCount(currentKnockoutFormat, groupsData.length);
 
-  // If in Print Mode, render full A4 report
-  if (printingMatch) {
-    return (
-      <MatchPrintReport
-        match={printingMatch}
-        tourConfig={tourConfig}
-        onBack={() => setPrintingMatch(null)}
-      />
-    );
-  }
-
-  return (
-    <div className="app-container animate-fade-in">
-      {/* Top Tabs */}
-      <div className="card mb16 portal-tabs" style={{ padding: '8px 12px' }}>
-        <div className="navbar-nav" style={{ background: 'transparent', border: 'none' }}>
-          <button
-            className={`nav-link ${adminTab === 'dieuhanh' ? 'active' : ''}`}
-            onClick={() => setAdminTab('dieuhanh')}
-          >
-            <Settings size={16} />
-            <span>Điều hành & biên bản</span>
-          </button>
-          <button
-            className={`nav-link ${adminTab === 'cauthu' ? 'active' : ''}`}
-            onClick={() => setAdminTab('cauthu')}
-          >
-            <Users size={16} />
-            <span>Đội hình</span>
-          </button>
-          <button
-            className={`nav-link ${adminTab === 'xembxh' ? 'active' : ''}`}
-            onClick={() => setAdminTab('xembxh')}
-          >
-            <Trophy size={16} />
-            <span>BXH & sơ đồ</span>
-          </button>
-          <button className={`nav-link ${adminTab==='congcu'?'active':''}`} onClick={()=>setAdminTab('congcu')}><Settings size={18}/><span>Điều lệ & dữ liệu</span></button>
-          <button className={`nav-link ${adminTab==='taikhoan'?'active':''}`} onClick={()=>setAdminTab('taikhoan')}><Users size={18}/><span>Tài khoản thư ký</span></button>
-        </div>
-      </div>
-
-      {adminTab === 'congcu' && <><TournamentIdentity tourConfig={tourConfig}/><AdminTools tourConfig={tourConfig}/></>}
-      {adminTab === 'taikhoan' && <SecretaryAccounts/>}
-
-      {/* ======================================================== */}
-      {/* TAB 1: ĐIỀU HÀNH & DUYỆT BIÊN BẢN */}
-      {/* ======================================================== */}
-      {adminTab === 'dieuhanh' && (
-        <>
-          {/* MODAL SỬA & DUYỆT BIÊN BẢN */}
-          {reviewingMatch && (() => {
+  const renderReviewDialog = () => reviewingMatch && (() => {
             const { goalsA: evGoalsA, goalsB: evGoalsB } = calculateEventsGoals(
               reviewingMatch.events || [],
               reviewingMatch.home,
@@ -1359,7 +1306,62 @@ export default function AdminDashboard() {
                 </div>
               </div>
             );
-          })()}
+          })();
+
+  // If in Print Mode, render full A4 report
+  if (printingMatch) {
+    return (
+      <MatchPrintReport
+        match={printingMatch}
+        tourConfig={tourConfig}
+        onBack={() => setPrintingMatch(null)}
+      />
+    );
+  }
+
+  if(reviewOnly)return <div className="app-container animate-fade-in"><section className="card mb24"><div className="card-header"><h2 className="text-accent">Admin phụ · Duyệt biên bản</h2><span className="badge badge-pending">{pendingApprovals.length} trận chờ duyệt</span></div><p className="text-dim mb16">Bạn được đối chiếu, sửa nội dung khi duyệt hoặc trả biên bản về thư ký. Cấu hình giải và tài khoản do admin chính quản lý.</p>{pendingApprovals.length===0?<div className="empty-state-card">Không có biên bản nào đang chờ duyệt.</div>:<div className="table-container"><table className="dpl-table"><thead><tr><th>Cặp đấu</th><th>Ngày giờ</th><th>Tỉ số</th><th>Thao tác</th></tr></thead><tbody>{pendingApprovals.map(m=><tr key={m.id}><td>{m.home} vs {m.away}</td><td>{formatDateTime(m.date)}</td><td>{m.scoreA} - {m.scoreB}</td><td><button className="btn green tiny" onClick={()=>handleOpenReview(m)}>Xem & Duyệt</button></td></tr>)}</tbody></table></div>}</section>{renderReviewDialog()}</div>;
+
+  return (
+    <div className="app-container animate-fade-in">
+      {/* Top Tabs */}
+      <div className="card mb16 portal-tabs" style={{ padding: '8px 12px' }}>
+        <div className="navbar-nav" style={{ background: 'transparent', border: 'none' }}>
+          <button
+            className={`nav-link ${adminTab === 'dieuhanh' ? 'active' : ''}`}
+            onClick={() => setAdminTab('dieuhanh')}
+          >
+            <Settings size={16} />
+            <span>Điều hành & biên bản</span>
+          </button>
+          <button
+            className={`nav-link ${adminTab === 'cauthu' ? 'active' : ''}`}
+            onClick={() => setAdminTab('cauthu')}
+          >
+            <Users size={16} />
+            <span>Đội hình</span>
+          </button>
+          <button
+            className={`nav-link ${adminTab === 'xembxh' ? 'active' : ''}`}
+            onClick={() => setAdminTab('xembxh')}
+          >
+            <Trophy size={16} />
+            <span>BXH & sơ đồ</span>
+          </button>
+          <button className={`nav-link ${adminTab==='congcu'?'active':''}`} onClick={()=>setAdminTab('congcu')}><Settings size={18}/><span>Điều lệ & dữ liệu</span></button>
+          <button className={`nav-link ${adminTab==='taikhoan'?'active':''}`} onClick={()=>setAdminTab('taikhoan')}><Users size={18}/><span>Tài khoản tác nghiệp</span></button>
+        </div>
+      </div>
+
+      {adminTab === 'congcu' && <><TournamentIdentity tourConfig={tourConfig}/><AdminTools tourConfig={tourConfig}/></>}
+      {adminTab === 'taikhoan' && <SecretaryAccounts/>}
+
+      {/* ======================================================== */}
+      {/* TAB 1: ĐIỀU HÀNH & DUYỆT BIÊN BẢN */}
+      {/* ======================================================== */}
+      {adminTab === 'dieuhanh' && (
+        <>
+          {/* MODAL SỬA & DUYỆT BIÊN BẢN */}
+          {renderReviewDialog()}
 
           {/* Pending Matches & Discipline Cards */}
           {(tourStatus === 'active' || tourStatus === 'completed') && (

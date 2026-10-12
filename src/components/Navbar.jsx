@@ -154,7 +154,7 @@ export default function Navbar({
           {currentUser && (isBtcPortal || isRefereePortal) && (
             <div className="user-profile-badge">
               <div className="user-avatar">
-                {currentUser.role === 'admin' ? (
+                {['admin','approver'].includes(currentUser.role) ? (
                   <Shield size={16} className="text-gold" />
                 ) : (
                   <User size={16} className="text-accent" />
@@ -163,7 +163,7 @@ export default function Navbar({
               <div className="user-meta">
                 <span className="user-name">{currentUser.name || currentUser.username}</span>
                 <span className="user-role-label">
-                  {currentUser.role === 'admin' ? 'Ban Tổ Chức' : 'Tổ Thư Ký'}
+                  {currentUser.role === 'admin' ? 'Ban Tổ Chức' : currentUser.role==='approver'?'Admin phụ · Duyệt biên bản':'Tổ Thư Ký'}
                 </span>
               </div>
               <button

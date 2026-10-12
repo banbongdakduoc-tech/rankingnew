@@ -71,8 +71,9 @@ function PortalLoginPage({ portalType = 'btc', onLoginSuccess, onNavigate }) {
     setIsLoading(false);
 
     if (res.success) {
+      if(!isBtc&&res.user.role==='approver'){onLoginSuccess(res.user);onNavigate('/btc');return;}
       // Kiểm tra quyền hạn tương ứng
-      if (isBtc && res.user.role !== 'admin') {
+      if (isBtc && !['admin','approver'].includes(res.user.role)) {
         toast.warning('Tài khoản này là Thư Ký Bàn, không có quyền Ban Tổ Chức. Đang chuyển bạn sang Bàn Thư Ký...');
         onLoginSuccess(res.user);
         setTimeout(() => {
@@ -253,8 +254,8 @@ function MainApp() {
         {sync.loading ? <div className="app-container card">Đang tải dữ liệu giải đấu…</div> : sync.error && !sync.updatedAt ? <div className="app-container card text-gold">Không tải được dữ liệu: {sync.error}. Kiểm tra kết nối backend.</div> : <Suspense fallback={<div className="app-container card">Đang mở cổng…</div>}>
         {/* 1. CỔNG BAN TỔ CHỨC (/btc hoặc /admin) */}
         {isBtcRoute && (
-          currentUser?.role === 'admin' ? (
-            <AdminDashboard />
+          ['admin','approver'].includes(currentUser?.role) ? (
+            <AdminDashboard reviewOnly={currentUser.role==='approver'} />
           ) : (
             <PortalLoginPage
               portalType="btc"

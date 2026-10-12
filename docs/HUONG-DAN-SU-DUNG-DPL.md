@@ -1,6 +1,6 @@
 # Hướng dẫn sử dụng Dược Premier League
 
-Cập nhật: **06/10/2026**, nhánh **demo**. Hướng dẫn theo hành vi hiện có của ứng dụng.
+Cập nhật: **12/10/2026**, nhánh **demo**. Hướng dẫn theo hành vi hiện có của ứng dụng.
 
 ## 1. Các cổng và trạng thái trận
 
@@ -35,12 +35,22 @@ Luồng trận: **Sắp diễn ra → Đang LIVE → Chờ duyệt → Đã xong
 
 ### Tạo tài khoản thư ký
 
-BTC → **Tài khoản thư ký** → nhập họ tên, tên đăng nhập và mật khẩu → tạo → quay lại lịch để phân công.
+BTC → **Tài khoản tác nghiệp** → nhập họ tên, tên đăng nhập và mật khẩu → tạo → quay lại lịch để phân công.
 
 - Tên đăng nhập: 3–40 ký tự, chữ thường/số/`_`/`-`; không trùng tài khoản đã có.
 - Mật khẩu ít nhất 12 ký tự; giới hạn phía máy chủ là 72 byte UTF-8. Ứng dụng bảo vệ mật khẩu tự động.
 - Tài khoản tạo trong Firebase Authentication không tự trở thành tài khoản của ứng dụng. Dùng chức năng tạo thư ký của BTC; tài khoản admin khởi tạo theo hướng dẫn triển khai.
 - Thư ký đăng nhập được nhưng không thấy trận: kiểm tra tài khoản đã được phân công trận đó hay chưa.
+
+### Admin phụ chỉ duyệt biên bản
+
+Admin chính vào **Tài khoản tác nghiệp**, chọn vai trò **Admin phụ · Duyệt biên bản**, nhập họ tên/tên đăng nhập/mật khẩu và tạo. Người được cấp tài khoản đăng nhập `/btc`.
+
+- Có màn hình riêng chỉ liệt kê biên bản chờ duyệt; được xem, in, sửa nội dung khi duyệt, duyệt hoặc trả về thư ký.
+- Không cần phân công từng trận; admin phụ xử lý biên bản chờ duyệt của giải.
+- Không được sửa lịch, đội hình, cấu hình, kỷ luật, reset/phục hồi/xuất backup, tạo tài khoản hoặc mở lại trận đã duyệt. Admin chính xử lý các việc này.
+- Biên bản nguyên trạng đủ chữ ký không cần ghi chú; sửa nội dung hoặc ngoại lệ chữ ký vẫn cần lý do. Duyệt có kiểm tra phiên bản, tỷ số và luân lưu như admin chính.
+- Admin chính tạo được thư ký và admin phụ, không dùng form này để tạo thêm tài khoản toàn quyền.
 
 ### Danh sách cầu thủ
 

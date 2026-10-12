@@ -6,7 +6,7 @@ const fail=(message,status) => {throw new DomainError(message,status);};
 const integer=(v,label) => {if(v===''||v==null||!Number.isInteger(Number(v))||Number(v)<0)fail(`${label} phải là số nguyên không âm.`);return Number(v);};
 const safeKey=(s) => typeof s==='string' && s.length>0 && s.length<=160 && !['.', '#', '$', '[', ']', '/'].some(c => s.includes(c)) && !['__proto__','constructor','prototype'].includes(s);
 export const DEFAULT_STATE={schemaVersion:2,_version:0,tourStatus:'none',tourConfig:{name:'Dược Premier League 2026',format:'group',numGroups:2,knockoutFormat:'quarter',halfDuration:20,...DEFAULT_RULES},groupsData:[],matches:{},players:{},suspensions:{},handledViolations:{},accounts:{},seasons:{},audit:[],receipts:{},backups:{}};
-export function initialState(data = {}) { const state = structuredClone({...DEFAULT_STATE,...data,tourConfig:{...DEFAULT_STATE.tourConfig,...data.tourConfig}}); for (const key of ['matches','players','suspensions','handledViolations','accounts','seasons','receipts','backups']) state[key] ||= {}; state.groupsData ||= []; state.audit ||= []; return state; }
+export function initialState(data = {}) { const state = structuredClone({...DEFAULT_STATE,...data,tourConfig:{...DEFAULT_STATE.tourConfig,...data.tourConfig}}); for (const key of ['matches','players','suspensions','handledViolations','accounts','seasons','receipts','backups']) state[key] ||= {}; state.groupsData ||= []; if(Array.isArray(state.groupsData))state.groupsData=state.groupsData.map(g=>g&&typeof g==='object'?{...g,teams:g.teams ?? []}:g); state.audit ||= []; return state; }
 const pick=(value,fields)=>Object.fromEntries(fields.filter(f=>value?.[f]!==undefined).map(f=>[f,value[f]]));
 export function publicState(data) {
   const matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>{
@@ -21,7 +21,7 @@ export function publicState(data) {
 export function staffState(data,user) {
   const out=publicState(data);
   out.matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>[id,canOperate(m,user)?structuredClone(m):out.matches[id]]));out.handledViolations=data.handledViolations || {};
-  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
+  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.reviewAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='approver').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
   return out;
 }
 function reportContent(m) {
@@ -46,7 +46,7 @@ function matchesSignedReport(m) {
   const values=v=>v==null||v===''?[undefined,null,'']:[v];
   return values(m.penA).some(penA=>values(m.penB).some(penB=>m.signatureHash===digest(reportContent({...m,penA,penB}))));
 }
-export function canOperate(m,user) { return user.role==='admin' || user.role==='referee' && m.assignedSecretary===user.username; }
+export function canOperate(m,user) { return user.role==='admin' || user.role==='approver'&&m.status==='Chờ duyệt' || user.role==='referee' && m.assignedSecretary===user.username; }
 function validateMatch(m,state,{approval=false,submission=false}={}) {
   if(!safeKey(m.home)||!safeKey(m.away)||m.home===m.away)fail('Hai đội phải hợp lệ và khác nhau.');
   const allTeams=state.groupsData.flatMap(g=>g.teams || []);
@@ -175,13 +175,18 @@ export function validateBackup(data, accounts = {}) {
 function validateGroups(groups) {
   if(!Array.isArray(groups)||groups.length>26)fail('Danh sách bảng không hợp lệ.');
   const seen=new Set(), names=new Set();
-  for(const g of groups){if(!safeKey(g.groupName)||names.has(g.groupName)||!Array.isArray(g.teams))fail('Bảng trùng hoặc không hợp lệ.');names.add(g.groupName);for(const t of g.teams){if(!safeKey(t))fail('Tên đội không được chứa . # $ [ ] /.');const n=t.trim().normalize('NFC').toLocaleLowerCase('vi');if(seen.has(n))fail('Đội trùng tên.');seen.add(n);}}
+  for(const g of groups){if(!safeKey(g?.groupName)||names.has(g.groupName)||!Array.isArray(g.teams))fail('Bảng trùng hoặc không hợp lệ.');names.add(g.groupName);for(const t of g.teams){if(!safeKey(t))fail('Tên đội không được chứa . # $ [ ] /.');const n=t.trim().normalize('NFC').toLocaleLowerCase('vi');if(seen.has(n))fail('Đội trùng tên.');seen.add(n);}}
 }
 export function applyCommand(original,cmd,user) {
-  if(!user||!['admin','referee'].includes(user.role))fail('Yêu cầu đăng nhập.',401);
+  if(!user||!['admin','referee','approver'].includes(user.role))fail('Yêu cầu đăng nhập.',401);
   if(!cmd.id || !safeKey(cmd.id))fail('Thiếu mã thao tác.');
   const receiptKey=`${user.username}_${cmd.id}`;
   if(original.receipts?.[receiptKey])return original;
+  if(user.role==='approver') {
+    const fields=new Set(['status','events','scoreA','scoreB','penA','penB','shootout','advancingTeam','resultType','administrativeReason','signatureException','rejectReason']);
+    if(cmd.kind!=='patch'||!cmd.patches||!Object.entries(cmd.patches).length)fail('Admin phụ chỉ được duyệt hoặc trả biên bản.',403);
+    for(const [path,value] of Object.entries(cmd.patches)){const [root,id,field,...rest]=path.split('/');if(root!=='matches'||rest.length||!fields.has(field)||original.matches?.[id]?.status!=='Chờ duyệt'||field==='status'&&!['Chờ duyệt','Đã xong','Bị từ chối'].includes(value))fail('Admin phụ chỉ được sửa nội dung biên bản chờ duyệt.',403);}
+  }
   const state=initialState(original), changed=new Set(), now=new Date().toISOString();
   if(cmd.kind==='reset') {
     if(user.role!=='admin')fail('Chỉ BTC được reset giải.',403);
@@ -231,7 +236,7 @@ export function applyCommand(original,cmd,user) {
       if(!['tourStatus','tourConfig','groupsData','matches','players','suspensions','handledViolations'].includes(root))fail('Không được ghi nhánh dữ liệu này.',403);
       if(root==='matches'&&id) {
         const old=original.matches?.[id];
-        if (user.role !== 'admin' && (state.tourStatus === 'completed' || old?.status === 'Chờ duyệt')) fail('Trận đã nộp hoặc giải đã khép lại.',403);
+        if (user.role === 'referee' && (state.tourStatus === 'completed' || old?.status === 'Chờ duyệt')) fail('Trận đã nộp hoặc giải đã khép lại.',403);
         if(user.role!=='admin' && (!old || !canOperate(old,user)))fail('Bạn không được phân công trận này.',403);
         const predecessor=cmd.predecessors?.[id];
         const followsOwn=predecessor && old?.lastCommand===predecessor && original.receipts?.[`${user.username}_${predecessor}`];
@@ -242,7 +247,7 @@ export function applyCommand(original,cmd,user) {
         const patch=tail.length ? {[tail[0]]:value} : value;
         const adminFields = ['date','venue','ref','sec','assignedSecretary','status','lineupA','lineupB','clock','shootout','signatures','secretaryNote','rejectReason','events','scoreA','scoreB','penA','penB','advancingTeam','resultType','administrativeReason','signatureException'];
         if (old && patch && Object.keys(patch).some(k => !adminFields.includes(k))) fail('Không được sửa trường kiểm toán hoặc cấu trúc trận.',403);
-        if(user.role!=='admin' && (!patch || Object.keys(patch).some(k=>!allowedStaff.includes(k))))fail('Thư ký không được sửa trường này.',403);
+        if(user.role==='referee' && (!patch || Object.keys(patch).some(k=>!allowedStaff.includes(k))))fail('Thư ký không được sửa trường này.',403);
         changed.add(id);putPath(state,path,value);
       } else {
         if(user.role!=='admin')fail('Chỉ BTC được thay đổi dữ liệu giải.',403);
@@ -270,7 +275,7 @@ export function applyCommand(original,cmd,user) {
       if(m.id!==id)fail('Mã trận không khớp.');
       const transitions={'Sắp diễn ra':['Sắp diễn ra','Đang LIVE'], 'Đang LIVE':['Đang LIVE','Chờ duyệt'], 'Chờ duyệt':['Chờ duyệt','Đã xong','Bị từ chối'], 'Bị từ chối':['Bị từ chối','Đang LIVE','Chờ duyệt','Đã xong']};
       if(!transitions[old?.status || 'Sắp diễn ra']?.includes(m.status))fail('Chuyển trạng thái trận không hợp lệ.');
-      if(user.role!=='admin' && ['Đã xong','Bị từ chối'].includes(m.status)&&m.status!==old?.status)fail('Chỉ BTC được duyệt hoặc trả biên bản.',403);
+      if(!['admin','approver'].includes(user.role) && ['Đã xong','Bị từ chối'].includes(m.status)&&m.status!==old?.status)fail('Chỉ BTC được duyệt hoặc trả biên bản.',403);
       if(old && (m.home!==old.home||m.away!==old.away) && old.status!=='Sắp diễn ra')fail('Không thay đội của trận đã bắt đầu.');
       if(m.status==='Đang LIVE') {
         for(const [side,team] of [['lineupA',m.home],['lineupB',m.away]]) {
