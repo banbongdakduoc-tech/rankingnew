@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../components/ToastContext';
 import {
+  scheduleRestWarnings,
   orderKnockoutRound,
   numberMatchesBySchedule,
   calculateGroupStandings,
@@ -1319,7 +1320,105 @@ export default function AdminDashboard({reviewOnly=false}) {
     );
   }
 
-  if(reviewOnly)return <div className="app-container animate-fade-in"><section className="card mb24"><div className="card-header"><h2 className="text-accent">Admin phụ · Duyệt biên bản</h2><span className="badge badge-pending">{pendingApprovals.length} trận chờ duyệt</span></div><p className="text-dim mb16">Bạn được đối chiếu, sửa nội dung khi duyệt hoặc trả biên bản về thư ký. Cấu hình giải và tài khoản do admin chính quản lý.</p>{pendingApprovals.length===0?<div className="empty-state-card">Không có biên bản nào đang chờ duyệt.</div>:<div className="table-container"><table className="dpl-table"><thead><tr><th>Cặp đấu</th><th>Ngày giờ</th><th>Tỉ số</th><th>Thao tác</th></tr></thead><tbody>{pendingApprovals.map(m=><tr key={m.id}><td>{m.home} vs {m.away}</td><td>{formatDateTime(m.date)}</td><td>{m.scoreA} - {m.scoreB}</td><td><button className="btn green tiny" onClick={()=>handleOpenReview(m)}>Xem & Duyệt</button></td></tr>)}</tbody></table></div>}</section>{renderReviewDialog()}</div>;
+  const renderSchedule = () => ((tourStatus === 'draft' || tourStatus === 'active' || tourStatus === 'completed') && (
+              <div>
+                <div className="flex-between mb16">
+                  <div className="card-title" style={{ fontSize: '15px' }}>
+                    <span>📅 Lịch thi đấu ({visibleSchedule.length}/{matches.length} trận)</span>
+                  </div>
+                  {!reviewOnly && tourStatus === 'draft' && (
+                    <button className="btn green" onClick={handlePublishTournament}>
+                      <Sparkles size={16} /> ✅ CHỐT LỊCH & KHỞI TRANH GIẢI ĐẤU
+                    </button>
+                  )}
+                </div>
+
+                {scheduleRestWarnings(matches,tourConfig).map(w=><p key={`${w.first}-${w.second}`} className="text-gold">⚠ {w.teams.join(', ')}: thời gian nghỉ dự kiến {w.restMinutes} phút giữa {matches.find(m=>m.id===w.first)?.home} – {matches.find(m=>m.id===w.first)?.away} và {matches.find(m=>m.id===w.second)?.home} – {matches.find(m=>m.id===w.second)?.away}. Chỉ lưu ý, vẫn được lưu lịch.</p>)}
+                <div className="schedule-filter-bar mb16">
+                  <label className="form-label" htmlFor="btc-schedule-group">Lọc theo bảng / vòng</label>
+                  <select id="btc-schedule-group" className="select-dark" value={scheduleGroup} onChange={e=>setScheduleGroup(e.target.value)}><option value="">Tất cả trận đấu</option>{scheduleGroups.map(group=><option key={group} value={group}>{scheduleGroupLabel(group)}</option>)}</select>
+                  <span className="text-dim">{visibleSchedule.length} trận · theo ngày giờ</span>
+                </div>
+                <div className="table-container schedule-scroll mb16" role="region" aria-label="Lịch thi đấu BTC, cuộn ngang để xem các cột" tabIndex={0}>
+
+                  <table className="dpl-table admin-schedule">
+                    <thead>
+                      <tr>
+                        <th>STT trận</th>
+                        <th>Cặp Đấu</th>
+                        <th>Tỉ Số</th>
+                        <th>Ngày giờ (VN)</th>
+                        <th>Sân thi đấu</th>
+                        <th>Trọng Tài</th>
+                        <th>Thư ký phụ trách</th>
+                        <th>Trạng Thái</th>
+                        <th>Biên bản</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleSchedule.map((m) => (
+                        <tr key={m.id}>
+                          <td data-label="STT trận"><span className="badge badge-ghost">{m.matchNumber}</span></td>
+                          <td data-label="Cặp đấu" style={{ fontWeight: '700' }}>{m.home} vs {m.away}</td>
+                          <td data-label="Tỉ số" className="text-accent font-bold">
+                            {m.status === 'Đã xong' || m.status === 'Đang LIVE' ? `${m.scoreA} - ${m.scoreB}` : '—'}
+                          </td>
+                          <td data-label="Ngày giờ (VN)">
+                            {tourStatus !== 'completed' && m.status !== 'Đã xong' ? (
+                              <input
+                                type="datetime-local"
+                                className="input-dark"
+                                style={{ padding: '4px 8px', fontSize: '12px' }}
+                                defaultValue={kickoffInput(m.date)}
+                                onBlur={e => saveMatchField(m, 'date', e.target.value)}
+                              />
+                            ) : (
+                              formatDateTime(m.date)
+                            )}
+                          </td>
+                          <td data-label="Sân thi đấu"><label className="match-field-label"><span className="sr-only">Sân thi đấu</span><input className="input-dark" aria-label={`Sân thi đấu: ${m.home} - ${m.away}`} placeholder="Ví dụ: Sân số 1" disabled={tourStatus==='completed'||m.status==='Đã xong'} defaultValue={m.venue||''} onBlur={e=>saveMatchField(m,'venue',e.target.value)}/></label></td>
+                          <td data-label="Trọng tài">
+                            {tourStatus !== 'completed' && m.status !== 'Đã xong' ? (
+                              <input
+                                type="text"
+                                className="input-dark"
+                                style={{ padding: '4px 8px', fontSize: '12px', width: '100px' }}
+                                defaultValue={m.ref || ''}
+                                onBlur={e => saveMatchField(m, 'ref', e.target.value)}
+                              />
+                            ) : (
+                              m.ref || '—'
+                            )}
+                          </td>
+                          <td data-label="Thư ký phụ trách"><select className="select-dark" aria-label={`Thư ký phụ trách: ${m.home} - ${m.away}`} disabled={tourStatus==='completed'||m.status==='Đã xong'} value={m.assignedSecretary||''} onChange={async e=>{const username=e.target.value;const account=secretaryAccounts.find(a=>a.username===username);try{await update(ref(db,`matches/${m.id}`),{assignedSecretary:username,sec:account?.name||''});toast.success('Đã lưu phân công thư ký.');}catch(err){toast.error(err.message);}}}><option value="">Chưa phân công</option>{secretaryAccounts.filter(a=>!a.disabled||a.username===m.assignedSecretary).map(a=><option key={a.username} value={a.username}>{a.name}{a.disabled?' (đã khóa)':''}</option>)}</select></td>
+                          <td data-label="Trạng thái"><span className="badge badge-ghost">{m.status}</span></td>
+                          <td data-label="Biên bản">
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button disabled={reviewOnly&&m.status!=='Chờ duyệt'} className="btn ghost tiny" title="Xem / sửa biên bản trận đấu" onClick={() => handleOpenReview(m)}>
+                                Biên bản
+                              </button>
+                              {m.status === 'Đã xong' && (
+                                <button
+                                  type="button"
+                                  className="btn ghost tiny"
+                                  onClick={() => setPrintingMatch(m)}
+                                  title="In biên bản trận đấu A4"
+                                  style={{ color: 'var(--accent-green)' }}
+                                >
+                                  <Printer size={12} /> In
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {!visibleSchedule.length&&<tr><td colSpan={9} className="text-center text-dim">Không có trận đấu trong bảng / vòng này.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) );
+  if(reviewOnly)return <div className="app-container animate-fade-in"><section className="card mb24"><div className="card-header"><h2 className="text-accent">Admin phụ · Lịch đấu & biên bản</h2><span className="badge badge-pending">{pendingApprovals.length} trận chờ duyệt</span></div><p className="text-dim mb16">Bạn được chỉnh lịch, sân, ngày giờ, thư ký, trọng tài và duyệt biên bản. Admin chính quản lý cấu trúc giải, tạo vòng knock-out và hoàn tất giải.</p>{pendingApprovals.length===0?<div className="empty-state-card">Không có biên bản nào đang chờ duyệt.</div>:<div className="table-container"><table className="dpl-table"><thead><tr><th>Cặp đấu</th><th>Ngày giờ</th><th>Tỉ số</th><th>Thao tác</th></tr></thead><tbody>{pendingApprovals.map(m=><tr key={m.id}><td>{m.home} vs {m.away}</td><td>{formatDateTime(m.date)}</td><td>{m.scoreA} - {m.scoreB}</td><td><button className="btn green tiny" onClick={()=>handleOpenReview(m)}>Xem & Duyệt</button></td></tr>)}</tbody></table></div>}</section><section className="card mb24"><label className="form-label">Thời gian nghỉ khuyến nghị (phút)<input className="input-dark" type="number" min="0" max="1440" defaultValue={tourConfig.minRestMinutes ?? 60} onBlur={async e=>{try{await update(ref(db,'tourConfig'),{minRestMinutes:Number(e.target.value)});toast.success('Đã lưu thời gian nghỉ khuyến nghị.');}catch(error){toast.error(error.message);}}}/></label><p className="text-dim">Đây là cảnh báo tham khảo, không cấm đổi lịch.</p>{renderSchedule()}</section>{renderReviewDialog()}</div>;
 
   return (
     <div className="app-container animate-fade-in">
@@ -1659,103 +1758,7 @@ export default function AdminDashboard({reviewOnly=false}) {
               </div>
             )}
 
-            {(tourStatus === 'draft' || tourStatus === 'active' || tourStatus === 'completed') && (
-              <div>
-                <div className="flex-between mb16">
-                  <div className="card-title" style={{ fontSize: '15px' }}>
-                    <span>📅 Lịch thi đấu ({visibleSchedule.length}/{matches.length} trận)</span>
-                  </div>
-                  {tourStatus === 'draft' && (
-                    <button className="btn green" onClick={handlePublishTournament}>
-                      <Sparkles size={16} /> ✅ CHỐT LỊCH & KHỞI TRANH GIẢI ĐẤU
-                    </button>
-                  )}
-                </div>
-
-                <div className="schedule-filter-bar mb16">
-                  <label className="form-label" htmlFor="btc-schedule-group">Lọc theo bảng / vòng</label>
-                  <select id="btc-schedule-group" className="select-dark" value={scheduleGroup} onChange={e=>setScheduleGroup(e.target.value)}><option value="">Tất cả trận đấu</option>{scheduleGroups.map(group=><option key={group} value={group}>{scheduleGroupLabel(group)}</option>)}</select>
-                  <span className="text-dim">{visibleSchedule.length} trận · theo ngày giờ</span>
-                </div>
-                <div className="table-container schedule-scroll mb16" role="region" aria-label="Lịch thi đấu BTC, cuộn ngang để xem các cột" tabIndex={0}>
-
-                  <table className="dpl-table admin-schedule">
-                    <thead>
-                      <tr>
-                        <th>STT trận</th>
-                        <th>Cặp Đấu</th>
-                        <th>Tỉ Số</th>
-                        <th>Ngày giờ (VN)</th>
-                        <th>Sân thi đấu</th>
-                        <th>Trọng Tài</th>
-                        <th>Thư ký phụ trách</th>
-                        <th>Trạng Thái</th>
-                        <th>Biên bản</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleSchedule.map((m) => (
-                        <tr key={m.id}>
-                          <td data-label="STT trận"><span className="badge badge-ghost">{m.matchNumber}</span></td>
-                          <td data-label="Cặp đấu" style={{ fontWeight: '700' }}>{m.home} vs {m.away}</td>
-                          <td data-label="Tỉ số" className="text-accent font-bold">
-                            {m.status === 'Đã xong' || m.status === 'Đang LIVE' ? `${m.scoreA} - ${m.scoreB}` : '—'}
-                          </td>
-                          <td data-label="Ngày giờ (VN)">
-                            {tourStatus !== 'completed' ? (
-                              <input
-                                type="datetime-local"
-                                className="input-dark"
-                                style={{ padding: '4px 8px', fontSize: '12px' }}
-                                defaultValue={kickoffInput(m.date)}
-                                onBlur={e => saveMatchField(m, 'date', e.target.value)}
-                              />
-                            ) : (
-                              formatDateTime(m.date)
-                            )}
-                          </td>
-                          <td data-label="Sân thi đấu"><label className="match-field-label"><span className="sr-only">Sân thi đấu</span><input className="input-dark" aria-label={`Sân thi đấu: ${m.home} - ${m.away}`} placeholder="Ví dụ: Sân số 1" disabled={tourStatus==='completed'} defaultValue={m.venue||''} onBlur={e=>saveMatchField(m,'venue',e.target.value)}/></label></td>
-                          <td data-label="Trọng tài">
-                            {tourStatus !== 'completed' ? (
-                              <input
-                                type="text"
-                                className="input-dark"
-                                style={{ padding: '4px 8px', fontSize: '12px', width: '100px' }}
-                                defaultValue={m.ref || ''}
-                                onBlur={e => saveMatchField(m, 'ref', e.target.value)}
-                              />
-                            ) : (
-                              m.ref || '—'
-                            )}
-                          </td>
-                          <td data-label="Thư ký phụ trách"><select className="select-dark" aria-label={`Thư ký phụ trách: ${m.home} - ${m.away}`} disabled={tourStatus==='completed'} value={m.assignedSecretary||''} onChange={async e=>{const username=e.target.value;const account=secretaryAccounts.find(a=>a.username===username);try{await update(ref(db,`matches/${m.id}`),{assignedSecretary:username,sec:account?.name||''});toast.success('Đã lưu phân công thư ký.');}catch(err){toast.error(err.message);}}}><option value="">Chưa phân công</option>{secretaryAccounts.filter(a=>!a.disabled||a.username===m.assignedSecretary).map(a=><option key={a.username} value={a.username}>{a.name}{a.disabled?' (đã khóa)':''}</option>)}</select></td>
-                          <td data-label="Trạng thái"><span className="badge badge-ghost">{m.status}</span></td>
-                          <td data-label="Biên bản">
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <button className="btn ghost tiny" title="Xem / sửa biên bản trận đấu" onClick={() => handleOpenReview(m)}>
-                                Biên bản
-                              </button>
-                              {m.status === 'Đã xong' && (
-                                <button
-                                  type="button"
-                                  className="btn ghost tiny"
-                                  onClick={() => setPrintingMatch(m)}
-                                  title="In biên bản trận đấu A4"
-                                  style={{ color: 'var(--accent-green)' }}
-                                >
-                                  <Printer size={12} /> In
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {!visibleSchedule.length&&<tr><td colSpan={9} className="text-center text-dim">Không có trận đấu trong bảng / vòng này.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            {renderSchedule()}
           </div>
 
           {/* ======================================================== */}

@@ -31,12 +31,12 @@ test('Admin phụ duyệt/trả biên bản; không cần ghi chú khi nguyên t
  assert.throws(()=>applyCommand(s,cmd(s,{'matches/m/status':'Đã xong','matches/m/events':[card]}),reviewer),/sau khi ký/);
  assert.equal(applyCommand(s,cmd(s,{'matches/m/status':'Đã xong','matches/m/events':[card],'matches/m/signatureException':'Đối chiếu thẻ thiếu'}),reviewer).matches.m.status,'Đã xong');
 });
-test('Admin phụ không nâng quyền, sửa lịch/đội hình, reset, restore, mở lại hay tác nghiệp LIVE',()=>{
+test('Admin phụ không nâng quyền, sửa đội hình, reset, restore, mở lại hay tác nghiệp LIVE',()=>{
  const s=pending();
- for(const patches of [{'tourStatus':'none'},{'tourConfig/name':'Fake'},{'players/A':[]},{'suspensions/A@@pa':{}},{'matches/new':s.matches.m},{'matches/m/date':'2026-10-15T08:00Z'},{'matches/m/assignedSecretary':'review'},{'matches/m/lineupA':[]},{'matches/m/signatures':{}},{'matches/m':s.matches.m},{'matches/m/status':'Đang LIVE'}])assert.throws(()=>applyCommand(s,cmd(s,patches),reviewer),e=>e.status===403);
+ for(const patches of [{'tourStatus':'none'},{'tourConfig/name':'Fake'},{'players/A':[]},{'suspensions/A@@pa':{}},{'matches/new':s.matches.m},{'matches/m/lineupA':[]},{'matches/m/signatures':{}},{'matches/m':s.matches.m},{'matches/m/status':'Đang LIVE'}])assert.throws(()=>applyCommand(s,cmd(s,patches),reviewer),e=>e.status===403);
  for(const kind of ['reset','restore','reopen','events'])assert.throws(()=>applyCommand(s,{...cmd(s,{}),kind},reviewer),e=>e.status===403);
  const live=fixture();assert.throws(()=>applyCommand(live,cmd(live,{'matches/m/status':'Đã xong'}),reviewer),e=>e.status===403);
- const dto=staffState(s,reviewer);assert.equal(dto.matches.m.secretaryNote,'Ghi chú đối chiếu');assert.ok(dto.matches.m.signatures);assert.equal(dto.secretaryAccounts,undefined);assert.equal(dto.reviewAccounts,undefined);assert.equal(dto.accounts,undefined);assert.equal(publicState(s).matches.m.signatures,undefined);
+ const dto=staffState(s,reviewer);assert.equal(dto.matches.m.secretaryNote,'Ghi chú đối chiếu');assert.ok(dto.matches.m.signatures);assert.equal(dto.secretaryAccounts.length,2);assert.equal(dto.reviewAccounts,undefined);assert.equal(dto.accounts,undefined);assert.equal(publicState(s).matches.m.signatures,undefined);
 });
 test('API: admin tạo admin phụ, login /btc, duyệt được nhưng không tạo tài khoản hoặc xuất backup',async t=>{
  const db=new Database({mode:'memory',data:pending()});const app=createApp(db),server=app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());
@@ -49,4 +49,14 @@ test('API: admin tạo admin phụ, login /btc, duyệt được nhưng không t
  assert.equal((await call('/api/state/commands',cmd(db.getAll(),{'matches/m/status':'Đã xong'}),reviewToken)).status,200);
  assert.equal((await call('/api/tournament/data',null,token)).data.data.reviewAccounts.some(a=>a.username===body.username),true);
  assert.equal(JSON.stringify(db.get('audit')).includes(body.password),false);
+});
+
+test('Admin phụ chỉnh lịch và phân công; không xóa, tạo KO, hoàn tất giải, sửa trận đã duyệt',()=>{
+ const s=fixture();s.accounts.review={role:'approver'};
+ const next=applyCommand(s,cmd(s,{'matches/m/date':'2026-10-15T08:00Z','matches/m/venue':'Sân 2','matches/m/ref':'Trọng tài 2','matches/m/sec':'Thư ký khác','matches/m/assignedSecretary':'other','tourConfig/minRestMinutes':30}),reviewer);
+ assert.equal(next.matches.m.assignedSecretary,'other');assert.equal(next.matches.m.venue,'Sân 2');assert.equal(next.tourConfig.minRestMinutes,30);
+ for(const patches of [{'matches/m':null},{'matches/m/date':null},{'matches/new':s.matches.m},{'tourStatus':'completed'},{'tourConfig/knockoutFormat':'semi'},{'matches/m/scoreA':2}])assert.throws(()=>applyCommand(s,cmd(s,patches),reviewer),e=>e.status===403);
+ assert.throws(()=>applyCommand(s,cmd(s,{'matches/m/assignedSecretary':'review'}),reviewer),/thư ký/);
+ const done=structuredClone(next);done.matches.m.status='Đã xong';assert.throws(()=>applyCommand(done,cmd(done,{'matches/m/venue':'Sân 3'}),reviewer),e=>e.status===403);
+ assert.equal(staffState(next,reviewer).matches.m.assignedSecretary,'other');assert.equal(staffState(next,reviewer).accounts,undefined);
 });

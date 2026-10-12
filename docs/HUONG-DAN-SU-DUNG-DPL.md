@@ -42,13 +42,13 @@ BTC → **Tài khoản tác nghiệp** → nhập họ tên, tên đăng nhập 
 - Tài khoản tạo trong Firebase Authentication không tự trở thành tài khoản của ứng dụng. Dùng chức năng tạo thư ký của BTC; tài khoản admin khởi tạo theo hướng dẫn triển khai.
 - Thư ký đăng nhập được nhưng không thấy trận: kiểm tra tài khoản đã được phân công trận đó hay chưa.
 
-### Admin phụ chỉ duyệt biên bản
+### Admin phụ quản lý lịch và duyệt biên bản
 
-Admin chính vào **Tài khoản tác nghiệp**, chọn vai trò **Admin phụ · Duyệt biên bản**, nhập họ tên/tên đăng nhập/mật khẩu và tạo. Người được cấp tài khoản đăng nhập `/btc`.
+Admin chính vào **Tài khoản tác nghiệp**, chọn vai trò **Admin phụ · Lịch đấu & biên bản**, nhập họ tên/tên đăng nhập/mật khẩu và tạo. Người được cấp tài khoản đăng nhập `/btc`.
 
-- Có màn hình riêng chỉ liệt kê biên bản chờ duyệt; được xem, in, sửa nội dung khi duyệt, duyệt hoặc trả về thư ký.
+- Có màn hình riêng gồm lịch đấu và biên bản chờ duyệt; được xem, in, sửa nội dung khi duyệt, duyệt hoặc trả về thư ký.
 - Không cần phân công từng trận; admin phụ xử lý biên bản chờ duyệt của giải.
-- Không được sửa lịch, đội hình, cấu hình, kỷ luật, reset/phục hồi/xuất backup, tạo tài khoản hoặc mở lại trận đã duyệt. Admin chính xử lý các việc này.
+- Được chỉnh ngày giờ, sân, trọng tài, thư ký và thời gian nghỉ khuyến nghị. Cảnh báo nghỉ chỉ là lưu ý, không chặn lưu; trùng sân vẫn bị chặn. Không được xóa, hoàn tất giải, tạo vòng knock-out, thay cấu trúc/cấu hình nghiệp vụ, đội hình, kỷ luật, reset/phục hồi/xuất backup, tạo tài khoản hoặc mở lại trận đã duyệt. Trận đã duyệt cần admin chính mở lại trước khi sửa.
 - Biên bản nguyên trạng đủ chữ ký không cần ghi chú; sửa nội dung hoặc ngoại lệ chữ ký vẫn cần lý do. Duyệt có kiểm tra phiên bản, tỷ số và luân lưu như admin chính.
 - Admin chính tạo được thư ký và admin phụ, không dùng form này để tạo thêm tài khoản toàn quyền.
 

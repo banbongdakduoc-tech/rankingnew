@@ -328,3 +328,18 @@ export function disciplineMatchSource(matches, record) {
   const event=match?.events?.find(e=>e.id===record.eventId);
   return {id:record.matchId,number:match?.matchNumber,name:match?`${match.home} vs ${match.away}`:record.matchName||'Không còn trận nguồn trong lịch hiện hành',round:match?.round||record.matchRound||'',date:match?.date||record.matchDate||'',minute:event?.displayMinute||record.eventMinute||'',match};
 }
+
+// Advisory only: insufficient rest never prevents saving a schedule.
+export function scheduleRestWarnings(matches, config = {}) {
+  const warnings=[];
+  const duration=(Number(config.halfDuration || 20)*2+10)*60000;
+  const minRest=Number(config.minRestMinutes ?? 60)*60000;
+  for(let i=0;i<matches.length;i++)for(let j=i+1;j<matches.length;j++) {
+    const a=matches[i],b=matches[j];if(!a.date||!b.date)continue;
+    const gap=Math.abs(Date.parse(a.date)-Date.parse(b.date));
+    const matchDuration=duration+([a,b].some(isKnockout)?Number(config.extraTimeMinutes || 0)*2*60000:0);
+    const teams=[a.home,a.away].filter(team=>[b.home,b.away].includes(team));
+    if(teams.length&&gap<matchDuration+minRest)warnings.push({first:a.id,second:b.id,teams,restMinutes:Math.floor((gap-matchDuration)/60000)});
+  }
+  return warnings;
+}

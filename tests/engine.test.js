@@ -80,10 +80,10 @@ test('Mở lại hủy chữ ký cũ, giữ chữ ký trong snapshot trước s�
 test('Public DTO allowlist cả dữ liệu lồng nhau, không lộ field riêng trong event/config/player',()=>{
   const s=submitted();s.matches.m.events[0].privateNote='secret-private';s.players.A[0].privateNote='secret-private';s.tourConfig.privateKey='secret-private';s.matches.m.clock={elapsed:0,period:1,running:false,privateNote:'secret-private'};assert.ok(!JSON.stringify(publicState(s)).includes('secret-private'));
 });
-test('Lịch trùng sân và nghỉ quá ngắn bị chặn trước lưu',()=>{
+test('Lịch trùng sân bị chặn, nghỉ quá ngắn vẫn lưu được',()=>{
   const s=fixture(),m2={id:'m2',home:'C',away:'D',group:'A',round:'Vòng 1',date:'2026-10-02T08:30:00Z',venue:'One',status:'Sắp diễn ra',scoreA:0,scoreB:0,events:[]};
   assert.throws(()=>applyCommand(s,command({'matches/m/date':'2026-10-02T08:00:00Z','matches/m/venue':'One','matches/m2':m2},s),admin),/Trùng sân/);
-  assert.throws(()=>applyCommand(s,command({'matches/m/date':'2026-10-02T08:00:00Z','matches/m2':{...m2,home:'A',away:'C',venue:'Two',date:'2026-10-02T09:40:00Z'}},s),admin),/nghỉ/);
+  assert.equal(applyCommand(s,command({'matches/m/date':'2026-10-02T08:00:00Z','matches/m2':{...m2,home:'A',away:'C',venue:'Two',date:'2026-10-02T09:40:00Z'}},s),admin).matches.m2.venue,'Two');
 });
 test('Không giảm án khi cầu thủ còn án vẫn thi đấu hoặc duyệt muộn trận trước nguồn án',()=>{
   const s=submitted();s.suspensions['A@@pa']={team:'A',reason:'Đỏ',remainingMatches:1,matchId:'source'};const next=applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin);assert.equal(next.suspensions['A@@pa'].remainingMatches,1);assert.deepEqual(next.suspensions['A@@pa'].eligibilityConflicts,['m']);
@@ -137,3 +137,5 @@ test('Không sửa kết quả knockout, tự xác định winner: không cần 
   const s=submitted();s.matches.m.group='Vòng Knock-out';s.matches.m.signatureHash=reportHash(s.matches.m);
   assert.equal(approveAsUI(s).matches.m.advancingTeam,'A');
 });
+
+test('Cảnh báo nghỉ chỉ lưu ý: đúng ngưỡng, thiếu giờ, knockout và trùng đội',async()=>{const {scheduleRestWarnings}=await import('../shared/tournament.js');const a={id:'a',home:'A',away:'B',date:'2026-10-02T08:00Z'},b={id:'b',home:'A',away:'C',date:'2026-10-02T09:40Z'};assert.equal(scheduleRestWarnings([a,b],{halfDuration:20,minRestMinutes:60})[0].restMinutes,50);assert.equal(scheduleRestWarnings([a,{...b,date:'2026-10-02T09:50Z'}],{halfDuration:20,minRestMinutes:60}).length,0);assert.equal(scheduleRestWarnings([a,{...b,date:''}]).length,0);assert.equal(scheduleRestWarnings([a,{...b,home:'D'}]).length,0);});

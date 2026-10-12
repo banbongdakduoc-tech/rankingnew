@@ -21,6 +21,7 @@ export function publicState(data) {
 export function staffState(data,user) {
   const out=publicState(data);
   out.matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>[id,canOperate(m,user)?structuredClone(m):out.matches[id]]));out.handledViolations=data.handledViolations || {};
+  if(user.role==='approver')out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));
   if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.reviewAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='approver'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
   return out;
 }
@@ -46,7 +47,7 @@ function matchesSignedReport(m) {
   const values=v=>v==null||v===''?[undefined,null,'']:[v];
   return values(m.penA).some(penA=>values(m.penB).some(penB=>m.signatureHash===digest(reportContent({...m,penA,penB}))));
 }
-export function canOperate(m,user) { return user.role==='admin' || user.role==='approver'&&m.status==='Chờ duyệt' || user.role==='referee' && m.assignedSecretary===user.username; }
+export function canOperate(m,user) { return user.role==='admin' || user.role==='approver' || user.role==='referee' && m.assignedSecretary===user.username; }
 function validateMatch(m,state,{approval=false,submission=false}={}) {
   if(!safeKey(m.home)||!safeKey(m.away)||m.home===m.away)fail('Hai đội phải hợp lệ và khác nhau.');
   const allTeams=state.groupsData.flatMap(g=>g.teams || []);
@@ -145,12 +146,11 @@ function validateSources(state) {
   }
 }
 function validateSchedule(state) {
-  const matches=Object.values(state.matches), minRest=Number(state.tourConfig.minRestMinutes ?? 60)*60000;
+  const matches=Object.values(state.matches);
   for(let i=0;i<matches.length;i++)for(let j=i+1;j<matches.length;j++) {
     const a=matches[i],b=matches[j];if(!a.date||!b.date)continue;
     const gap=Math.abs(Date.parse(a.date)-Date.parse(b.date)),duration=(Number(state.tourConfig.halfDuration)*2+10+([a,b].some(isKnockout)?Number(state.tourConfig.extraTimeMinutes||0)*2:0))*60000;
     if(a.venue&&a.venue===b.venue&&gap<duration)fail(`Trùng sân: ${a.home}–${a.away} và ${b.home}–${b.away}.`);
-    if([a.home,a.away].some(t=>[b.home,b.away].includes(t))&&gap<duration+minRest)fail('Một đội có hai trận quá gần nhau; kiểm tra thời gian nghỉ.');
   }
 }
 function putPath(state,path,value) {
@@ -185,7 +185,15 @@ export function applyCommand(original,cmd,user) {
   if(user.role==='approver') {
     const fields=new Set(['status','events','scoreA','scoreB','penA','penB','shootout','advancingTeam','resultType','administrativeReason','signatureException','rejectReason']);
     if(cmd.kind!=='patch'||!cmd.patches||!Object.entries(cmd.patches).length)fail('Admin phụ chỉ được duyệt hoặc trả biên bản.',403);
-    for(const [path,value] of Object.entries(cmd.patches)){const [root,id,field,...rest]=path.split('/');if(root!=='matches'||rest.length||!fields.has(field)||original.matches?.[id]?.status!=='Chờ duyệt'||field==='status'&&!['Chờ duyệt','Đã xong','Bị từ chối'].includes(value))fail('Admin phụ chỉ được sửa nội dung biên bản chờ duyệt.',403);}
+    const scheduleFields=new Set(['date','venue','ref','sec','assignedSecretary']);
+    for(const [path,value] of Object.entries(cmd.patches)) {
+      const [root,id,field,...rest]=path.split('/');
+      if(root==='tourConfig'&&id==='minRestMinutes'&&!field)continue;
+      const match=original.matches?.[id];
+      if(root!=='matches'||rest.length||!match||value===null)fail('Admin phụ không được xóa hoặc thay cấu trúc giải.',403);
+      if(scheduleFields.has(field)&&match.status!=='Đã xong'&&original.tourStatus!=='completed')continue;
+      if(!fields.has(field)||match.status!=='Chờ duyệt'||field==='status'&&!['Chờ duyệt','Đã xong','Bị từ chối'].includes(value))fail('Admin phụ chỉ được chỉnh lịch hoặc duyệt biên bản chờ duyệt.',403);
+    }
   }
   const state=initialState(original), changed=new Set(), now=new Date().toISOString();
   if(cmd.kind==='reset') {
@@ -250,7 +258,7 @@ export function applyCommand(original,cmd,user) {
         if(user.role==='referee' && (!patch || Object.keys(patch).some(k=>!allowedStaff.includes(k))))fail('Thư ký không được sửa trường này.',403);
         changed.add(id);putPath(state,path,value);
       } else {
-        if(user.role!=='admin')fail('Chỉ BTC được thay đổi dữ liệu giải.',403);
+        if(user.role!=='admin'&&!(user.role==='approver'&&path==='tourConfig/minRestMinutes'))fail('Chỉ BTC được thay đổi dữ liệu giải.',403);
         if(root==='matches' && Object.values(original.matches||{}).some(m=>m.status!=='Sắp diễn ra'))fail('Không ghi đè lịch đã có trận tác nghiệp.');
         if(['groupsData','tourConfig'].includes(root) && Object.values(original.matches||{}).some(m=>m.status!=='Sắp diễn ra') && root==='groupsData')fail('Không thay bảng sau khi tác nghiệp.');
         if(root==='matches'){backup(state,'Trước thay lịch');Object.keys(value||{}).forEach(id=>changed.add(id));}
