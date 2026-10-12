@@ -215,6 +215,10 @@ function MainApp() {
   const [tourConfig, setTourConfig] = useState({ name: 'Dược Premier League 2026' });
 
   useEffect(() => {
+    document.title = tourConfig.name?.trim() || 'Quản lý giải đấu';
+  }, [tourConfig.name]);
+
+  useEffect(() => {
     const unsubscribe0 = onValue(ref(db, 'tourStatus'), (snap) => setTourStatus(snap.val() || 'none'));
     const unsubscribe1 = onValue(ref(db, 'tourConfig'), (snap) => {
       if (snap.exists()) setTourConfig(snap.val());
