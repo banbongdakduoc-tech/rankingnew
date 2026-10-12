@@ -21,7 +21,7 @@ export function publicState(data) {
 export function staffState(data,user) {
   const out=publicState(data);
   out.matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>[id,canOperate(m,user)?structuredClone(m):out.matches[id]]));out.handledViolations=data.handledViolations || {};
-  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.reviewAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='approver').map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
+  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.reviewAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='approver'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
   return out;
 }
 function reportContent(m) {
@@ -54,7 +54,7 @@ function validateMatch(m,state,{approval=false,submission=false}={}) {
   m.scoreA=integer(m.scoreA ?? 0,'Tỷ số A');m.scoreB=integer(m.scoreB ?? 0,'Tỷ số B');
   if(!['played','forfeit'].includes(m.resultType || 'played'))fail('Loại kết quả không hợp lệ.');
   if(m.date){try{m.date=normalizeKickoff(m.date);}catch{fail('Ngày giờ trận không hợp lệ.');}}
-  if(m.assignedSecretary && (state.accounts[m.assignedSecretary]?.role!=='referee'||state.accounts[m.assignedSecretary]?.disabled))fail('Tài khoản thư ký được phân công không hợp lệ.');
+  if(m.assignedSecretary && (state.accounts[m.assignedSecretary]?.role!=='referee'||state.accounts[m.assignedSecretary]?.disabled&&m.status!=='Đã xong'))fail('Tài khoản thư ký được phân công không hợp lệ.');
   for(const [side,team] of [['lineupA',m.home],['lineupB',m.away]]) {
     if(!Array.isArray(m[side] || []))fail('Đội hình không hợp lệ.');
     const seen=new Set();

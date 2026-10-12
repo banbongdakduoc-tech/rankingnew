@@ -52,6 +52,15 @@ Admin chính vào **Tài khoản tác nghiệp**, chọn vai trò **Admin phụ 
 - Biên bản nguyên trạng đủ chữ ký không cần ghi chú; sửa nội dung hoặc ngoại lệ chữ ký vẫn cần lý do. Duyệt có kiểm tra phiên bản, tỷ số và luân lưu như admin chính.
 - Admin chính tạo được thư ký và admin phụ, không dùng form này để tạo thêm tài khoản toàn quyền.
 
+### Xóa tài khoản thư ký hoặc admin phụ
+
+Admin chính vào **Tài khoản tác nghiệp** → **Xóa tài khoản** tại dòng cần xóa → nhập chính xác tên đăng nhập → xác nhận.
+
+- Tài khoản bị thu hồi quyền/phiên đăng nhập ngay và mất mật khẩu đã lưu; không xóa kết quả hay lịch sử biên bản.
+- Tên đăng nhập đã xóa được giữ để bảo toàn lịch sử, không dùng lại cho người khác.
+- Trận chưa bắt đầu được bỏ phân công, BTC cần chọn lại thư ký. Nếu còn trận LIVE/chờ duyệt/bị trả, hãy hoàn tất biên bản hoặc đổi phân công trước khi xóa.
+- Không thể xóa tài khoản admin chính hoặc chính tài khoản đang đăng nhập. Admin phụ/thư ký không có quyền xóa tài khoản.
+
 ### Danh sách cầu thủ
 
 Chọn đội → thêm thủ công hoặc import JSON → kiểm tra bản xem trước → chọn **gộp** hoặc **thay thế** → lưu. Tải ảnh từ máy/điện thoại để cắt vuông và nén.

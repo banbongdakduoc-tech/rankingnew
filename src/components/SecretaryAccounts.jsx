@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { db, ref, onValue, request, refreshData } from '../services/dataService';
 import { useToast } from './ToastContext';
+import { askText } from '../services/promptService';
 
 export default function SecretaryAccounts() {
   const toast=useToast();
@@ -15,6 +16,16 @@ export default function SecretaryAccounts() {
       await refreshData();toast.success(form.role==='approver'?'Đã tạo admin phụ. Đăng nhập /btc để duyệt biên bản.':'Đã tạo tài khoản thư ký. Có thể phân công vào lịch thi đấu.');
     }catch(err){toast.error(err.message);}finally{setBusy(false);}
   };
+  const deleteAccount=async account=>{
+    const confirmation=await askText(`Xóa tài khoản ${account.name} (${account.username})? Quyền và phiên đăng nhập sẽ bị thu hồi. Lịch sử biên bản được giữ; trận chưa bắt đầu cần phân công lại. Nhập tên đăng nhập ${account.username} để xác nhận.`);
+    if(confirmation===null)return;
+    if(confirmation.trim()!==account.username){toast.error('Tên đăng nhập xác nhận không đúng.');return;}
+    setBusy(true);
+    try{
+      await request(`/api/auth/accounts/${encodeURIComponent(account.username)}`,{method:'DELETE',body:JSON.stringify({confirmation:account.username})});
+      await refreshData();toast.success('Đã xóa tài khoản và thu hồi phiên đăng nhập.');
+    }catch(err){toast.error(err.message);}finally{setBusy(false);}
+  };
   return <section className="card mb24">
     <div className="card-header"><h3 className="text-accent">Tài khoản tác nghiệp</h3></div>
     <p className="text-dim mb16">Admin chính tạo thư ký (/thuky) hoặc admin phụ chỉ duyệt biên bản (/btc). Admin phụ không được tạo tài khoản, đổi cấu hình hoặc reset giải.</p>
@@ -24,7 +35,8 @@ export default function SecretaryAccounts() {
       <label className="form-label">Mật khẩu<input className="input-dark" type="password" autoComplete="new-password" required minLength={12} value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><small>Ít nhất 12 ký tự. Mật khẩu được bảo vệ tự động.</small></label>
       <div className="form-group"><button className="btn green" disabled={busy}>{busy?'Đang tạo…':'Tạo tài khoản'}</button></div>
     </form>
-    <div className="table-container"><table className="dpl-table"><thead><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Vai trò</th><th>Trạng thái</th></tr></thead><tbody>{[...accounts.map(a=>({...a,role:'referee'})),...reviewers.map(a=>({...a,role:'approver'}))].map(a=><tr key={a.username}><td>{a.name}</td><td>{a.username}</td><td>{a.role==='approver'?'Admin phụ · Duyệt biên bản':'Thư ký'}</td><td><span className={`badge ${a.disabled?'badge-ghost':'badge-accent-glow'}`}>{a.disabled?'Đã khóa':'Đang hoạt động'}</span></td></tr>)}</tbody></table></div>
+    <div className="table-container"><table className="dpl-table"><thead><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{[...accounts.map(a=>({...a,role:'referee'})),...reviewers.map(a=>({...a,role:'approver'}))].map(a=><tr key={a.username}><td>{a.name}</td><td>{a.username}</td><td>{a.role==='approver'?'Admin phụ · Duyệt biên bản':'Thư ký'}</td><td><span className={`badge ${a.disabled?'badge-ghost':'badge-accent-glow'}`}>{a.disabled?'Đã khóa':'Đang hoạt động'}</span></td><td><button className="btn red btn-sm" disabled={busy} onClick={()=>deleteAccount(a)} aria-label={`Xóa tài khoản ${a.username}`}>Xóa tài khoản</button></td></tr>)}</tbody></table></div>
+    <p className="text-dim mt12">Tài khoản đã xóa không thể đăng nhập. Tên đăng nhập cũ được giữ trong lịch sử và không dùng lại. Hoàn tất biên bản hoặc đổi thư ký trước khi xóa người đang tác nghiệp.</p>
     {!accounts.length&&!reviewers.length&&<p className="text-dim mt12">Chưa có tài khoản tác nghiệp.</p>}
   </section>;
 }
