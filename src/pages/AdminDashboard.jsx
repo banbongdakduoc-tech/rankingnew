@@ -744,12 +744,13 @@ export default function AdminDashboard({reviewOnly=false}) {
   const handleRejectMatch = async () => {
     try {
 
-    const reason = await askText('Nhập lý do từ chối để Thư ký nắm được và sửa lại:');
-    if (reason) {
-      await update(ref(db, `matches/${reviewingMatch.id}`), {
-        status: 'Bị từ chối',
-        rejectReason: reason
-      });
+    const match=reviewingMatch;
+    const reason = await askText('Nhập lý do trả biên bản để Thư ký nắm được và sửa lại:',match.rejectReason || '');
+    if (reason?.trim()) {
+      await sendCommand({kind:'patch',versions:{[match.id]:match.version || 0},patches:{
+        [`matches/${match.id}/status`]: 'Bị từ chối',
+        [`matches/${match.id}/rejectReason`]: reason.trim()
+      }});
       toast.info('Đã trả biên bản về cho Thư ký');
       setReviewingMatch(null);
     }

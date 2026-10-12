@@ -139,3 +139,16 @@ test('Không sửa kết quả knockout, tự xác định winner: không cần 
 });
 
 test('Cảnh báo nghỉ chỉ lưu ý: đúng ngưỡng, thiếu giờ, knockout và trùng đội',async()=>{const {scheduleRestWarnings}=await import('../shared/tournament.js');const a={id:'a',home:'A',away:'B',date:'2026-10-02T08:00Z'},b={id:'b',home:'A',away:'C',date:'2026-10-02T09:40Z'};assert.equal(scheduleRestWarnings([a,b],{halfDuration:20,minRestMinutes:60})[0].restMinutes,50);assert.equal(scheduleRestWarnings([a,{...b,date:'2026-10-02T09:50Z'}],{halfDuration:20,minRestMinutes:60}).length,0);assert.equal(scheduleRestWarnings([a,{...b,date:''}]).length,0);assert.equal(scheduleRestWarnings([a,{...b,home:'D'}]).length,0);});
+
+test('Mở lại → trả thư ký → sửa → ký lại → nộp → duyệt, giữ lịch sử và kiểm tra phiên bản',()=>{
+ let s=submitted();s=applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin);
+ s=applyCommand(s,{kind:'reopen',id:'reopen-return',matchId:'m',version:s.matches.m.version,reason:'Kiểm tra ghi bàn'},admin);
+ const beforeReturn=structuredClone(s);
+ s=applyCommand(s,command({'matches/m/status':'Bị từ chối','matches/m/rejectReason':'Thư ký sửa phút bàn thắng'},s),admin);
+ assert.equal(s.matches.m.rejectReason,'Thư ký sửa phút bàn thắng');assert.equal(s.matches.m.revisions.length,1);assert.equal(s.matches.m.signatures,null);
+ assert.throws(()=>applyCommand(s,command({'matches/m/rejectReason':'Ghi đè cũ'},beforeReturn),admin),e=>e.status===409);
+ s=applyCommand(s,{kind:'events',id:'correct-return',matchId:'m',baseVersion:s.matches.m.version,remove:['e1'],add:[{...event,id:'corrected-goal',minute:12}]},staff);
+ s=applyCommand(s,command({'matches/m/status':'Chờ duyệt','matches/m/signatures':{home:signature,away:signature,referee:signature}},s),staff);
+ s=applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin);
+ assert.equal(s.matches.m.scoreA,1);assert.equal(s.matches.m.status,'Đã xong');assert.equal(s.matches.m.revisions.length,1);
+});
