@@ -5,6 +5,7 @@ import { getDatabase } from 'firebase-admin/database';
 import bcrypt from 'bcryptjs';
 import { migrateState } from '../services/migrateState.js';
 import { initialState } from '../services/stateEngine.js';
+import { firebaseTarget } from './firebaseTarget.js';
 
 export class Database {
   constructor({mode=process.env.DB_MODE || 'firebase',file=process.env.DPL_DB_FILE || 'server/storage/dpl_database.json',data}={}) {
@@ -12,10 +13,9 @@ export class Database {
   }
   async init() {
     if(this.mode==='firebase') {
-      if(!process.env.FIREBASE_DATABASE_URL || !process.env.FIREBASE_SERVICE_ACCOUNT_JSON || !process.env.DPL_DATABASE_PATH)throw new Error('Thiếu cấu hình Firebase demo. Cần FIREBASE_DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON và DPL_DATABASE_PATH.');
-      if(!/^environments\/demo(?:[-_a-zA-Z0-9]*)(?:\/|$)/.test(process.env.DPL_DATABASE_PATH))throw new Error('Nhánh demo chỉ được ghi vào environments/demo…; không dùng root của giải thật.');
+      const databasePath=firebaseTarget();
       const app=getApps()[0] || initializeApp({credential:cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)),databaseURL:process.env.FIREBASE_DATABASE_URL});
-      this.root=getDatabase(app).ref(process.env.DPL_DATABASE_PATH);
+      this.root=getDatabase(app).ref(databasePath);
       const snapshot=await this.root.get();this.data=migrateState(snapshot.val() || {});
     } else if(this.mode==='file') {
       if(process.env.NODE_ENV==='production')throw new Error('Không cho phép lưu file trong production.');
