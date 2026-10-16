@@ -3,7 +3,7 @@ import { chooseAvatarImage } from '../services/avatarService';
 // src/pages/AdminDashboard.jsx
 import { useState, useEffect } from 'react';
 import { ref, set, update, onValue } from '../services/dataService';
-import { db, reopenMatch, resetTournament, sendCommand } from '../services/dataService';
+import { db, reopenMatch, resetTournament, sendCommand, downloadBackup, tournamentVersion } from '../services/dataService';
 import DisciplineMatchSource from '../components/DisciplineMatchSource';
 import AdminTools from '../components/AdminTools';
 import SecretaryAccounts from '../components/SecretaryAccounts';
@@ -320,21 +320,28 @@ export default function AdminDashboard({reviewOnly=false}) {
     } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
 };
 
+  const offerSeasonDownload = async () => {
+    if(!window.confirm('Bạn có muốn tải JSON mùa giải về máy trước khi xóa dữ liệu? Chọn Hủy để tiếp tục mà không tải. Database không giữ bản sao.'))return;
+    // Abort the operation if export fails; never delete after a failed download request.
+    const blob=await downloadBackup(),url=URL.createObjectURL(blob),link=document.createElement('a');
+    link.href=url;link.download=`dpl-mua-giai-${new Date().toISOString().slice(0,10)}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
   const handleCompleteTour = async () => {
     try {
-
-    if (window.confirm('Xác nhận KHÉP LẠI giải đấu? Khán giả vẫn xem được BXH nhưng Thư ký sẽ không thể sửa đổi nữa.')) {
-      await set(ref(db, 'tourStatus'), 'completed');
-      toast.success('Giải đấu đã chuyển sang trạng thái Hoàn Thành!');
-    }
-
-    } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }
-};
-
+      if(matches.some(m=>m.status!=='Đã xong')){toast.error('Cần duyệt toàn bộ trận trước khi khép lại giải.');return;}
+      const expectedVersion=tournamentVersion();
+      await offerSeasonDownload();
+      await sendCommand({kind:'patch',patches:{tourStatus:'completed'},expectedVersion});
+      toast.success('Đã khép giải và xóa dữ liệu mùa giải khỏi database. Tài khoản được giữ lại.');
+    }catch(error){toast.error(error.message || 'Không thể khép giải.');}
+  };
   const handleDeleteTour = async () => {
-    const confirmation = await askText(`Reset sẽ lưu backup của mùa hiện tại và giữ tài khoản. Nhập đúng tên giải để xác nhận: ${tourConfig.name}`);
-    if (confirmation === null) return;
-    try { await resetTournament(confirmation); toast.success('Đã sao lưu mùa hiện tại và reset dữ liệu giải.'); } catch(e) { toast.error(e.message); }
+    try {
+      const expectedVersion=tournamentVersion();
+      await offerSeasonDownload();
+      await resetTournament(tourConfig.name,expectedVersion);
+      toast.success('Đã xóa dữ liệu mùa giải khỏi database. Tài khoản được giữ lại.');
+    }catch(error){toast.error(error.message || 'Không thể xóa giải.');}
   };
 
   // ==========================================

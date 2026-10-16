@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { calculateEventsGoals, calculateGroupStandings, compareEvents, resolveWinner, evaluateShootout, validatePlayers, detectViolations, DEFAULT_RULES, isKnockout, normalizeKickoff } from '../../shared/tournament.js';
 
 export class DomainError extends Error { constructor(message, status = 422) { super(message); this.status=status; } }
@@ -6,7 +6,7 @@ const fail=(message,status) => {throw new DomainError(message,status);};
 const integer=(v,label) => {if(v===''||v==null||!Number.isInteger(Number(v))||Number(v)<0)fail(`${label} phải là số nguyên không âm.`);return Number(v);};
 const safeKey=(s) => typeof s==='string' && s.length>0 && s.length<=160 && !['.', '#', '$', '[', ']', '/'].some(c => s.includes(c)) && !['__proto__','constructor','prototype'].includes(s);
 export const DEFAULT_STATE={schemaVersion:2,_version:0,tourStatus:'none',tourConfig:{name:'Dược Premier League 2026',format:'group',numGroups:2,knockoutFormat:'quarter',halfDuration:20,...DEFAULT_RULES},groupsData:[],matches:{},players:{},suspensions:{},handledViolations:{},accounts:{},seasons:{},audit:[],receipts:{},backups:{}};
-export function initialState(data = {}) { const state = structuredClone({...DEFAULT_STATE,...data,tourConfig:{...DEFAULT_STATE.tourConfig,...data.tourConfig}}); for (const key of ['matches','players','suspensions','handledViolations','accounts','seasons','receipts','backups']) state[key] ||= {}; state.groupsData ||= []; if(Array.isArray(state.groupsData))state.groupsData=state.groupsData.map(g=>g&&typeof g==='object'?{...g,teams:g.teams ?? []}:g); state.audit ||= []; return state; }
+export function initialState(data = {}) { const state = structuredClone({...DEFAULT_STATE,...data,tourConfig:{...DEFAULT_STATE.tourConfig,...data.tourConfig}}); for (const key of ['matches','players','suspensions','handledViolations','accounts','seasons','receipts','backups']) state[key] ||= {}; state.seasons={};state.backups={};state.groupsData ||= []; if(Array.isArray(state.groupsData))state.groupsData=state.groupsData.map(g=>g&&typeof g==='object'?{...g,teams:g.teams ?? []}:g); state.audit ||= []; return state; }
 const pick=(value,fields)=>Object.fromEntries(fields.filter(f=>value?.[f]!==undefined).map(f=>[f,value[f]]));
 export function publicState(data) {
   const matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>{
@@ -16,13 +16,13 @@ export function publicState(data) {
     if(m.shootout)out.shootout=m.shootout.map(k=>pick(k,['id','team','playerId','player','result','sequence','cancelled']));
     if(m.clock)out.clock=pick(m.clock,['elapsed','startedAt','period','running','timeBasis']);return [id,out];
   }));
-  return {serverTime:Date.now(),seasonHistory:Object.values(data.seasons || {}).map(s=>({id:s.id,name:s.name,at:s.at})),schemaVersion:2,_version:data._version || 0,tourStatus:data.tourStatus,tourConfig:pick(data.tourConfig,['name','organizer','logo','format','numGroups','knockoutFormat','halfDuration',...Object.keys(DEFAULT_RULES),'minRestMinutes']),groupsData:data.groupsData,players:Object.fromEntries(Object.entries(data.players||{}).map(([team,list])=>[team,list.map(p=>pick(p,['id','team','num','name','shirtName','avatar']))])),matches,suspensions:Object.fromEntries(Object.entries(data.suspensions||{}).map(([key,ban])=>[key,pick(ban,['team','playerId','player','reason','remainingMatches','totalMatches','needsReview'])]))};
+  return {serverTime:Date.now(),schemaVersion:2,_version:data._version || 0,tourStatus:data.tourStatus,tourConfig:pick(data.tourConfig,['name','organizer','logo','format','numGroups','knockoutFormat','halfDuration',...Object.keys(DEFAULT_RULES),'minRestMinutes']),groupsData:data.groupsData,players:Object.fromEntries(Object.entries(data.players||{}).map(([team,list])=>[team,list.map(p=>pick(p,['id','team','num','name','shirtName','avatar']))])),matches,suspensions:Object.fromEntries(Object.entries(data.suspensions||{}).map(([key,ban])=>[key,pick(ban,['team','playerId','player','reason','remainingMatches','totalMatches','needsReview'])]))};
 }
 export function staffState(data,user) {
   const out=publicState(data);
   out.matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>[id,canOperate(m,user)?structuredClone(m):out.matches[id]]));out.handledViolations=data.handledViolations || {};
   if(user.role==='approver')out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));
-  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.reviewAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='approver'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.backupHistory=Object.values(data.backups||{}).map(b=>({id:b.id,at:b.at,reason:b.reason}));}
+  if(user.role==='admin'){out.suspensions=structuredClone(data.suspensions||{});out.players=structuredClone(data.players||{});out.audit=(data.audit||[]).slice(-300);out.secretaryAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='referee'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));out.reviewAccounts=Object.entries(data.accounts||{}).filter(([,a])=>a.role==='approver'&&!a.deletedAt).map(([username,a])=>({username,name:a.name||username,disabled:!!a.disabled}));}
   return out;
 }
 function reportContent(m) {
@@ -158,11 +158,7 @@ function putPath(state,path,value) {
   let target=state;for(const part of parts.slice(0,-1))target=target[part] ||= {};
   if(value===null)delete target[parts.at(-1)];else target[parts.at(-1)]=structuredClone(value);
 }
-function backup(state,reason) {
-  const id=randomUUID(), snapshot=exportBackup(state);state.backups[id]={id,at:new Date().toISOString(),reason,snapshot};
-  const keys=Object.keys(state.backups);while(keys.length>5)delete state.backups[keys.shift()];
-}
-export function exportBackup(state) { const {accounts,receipts,backups,...data}=state;void accounts;void receipts;void backups;return {...structuredClone(data),schemaVersion:2}; }
+export function exportBackup(state) { const {accounts,receipts,backups,seasons,...data}=state;void accounts;void receipts;void backups;void seasons;return {...structuredClone(data),schemaVersion:2}; }
 export function validateBackup(data, accounts = {}) {
   if(!data||Array.isArray(data)||data.schemaVersion!==2)fail('Backup không đúng schemaVersion 2.');
   if(!Array.isArray(data.groupsData)||!data.matches||Array.isArray(data.matches)||!data.players||Array.isArray(data.players))fail('Backup thiếu bảng, trận hoặc cầu thủ.');
@@ -200,13 +196,11 @@ export function applyCommand(original,cmd,user) {
     if(user.role!=='admin')fail('Chỉ BTC được reset giải.',403);
     if(cmd.expectedVersion!==state._version)fail('Dữ liệu đã thay đổi.',409);
     if(cmd.confirmation!==state.tourConfig.name)fail('Nhập đúng tên giải để xác nhận reset.');
-    backup(state,'Trước reset mùa giải');
-    if(Object.keys(state.matches).length){const id=randomUUID();state.seasons[id]={id,name:state.tourConfig.name,at:now,data:publicState(state)};}
     const empty=initialState();for(const root of ['tourStatus','tourConfig','groupsData','matches','players','suspensions','handledViolations'])state[root]=empty[root];
   } else if(cmd.kind==='restore') {
     if(user.role!=='admin')fail('Chỉ BTC được phục hồi.',403);
     if(cmd.expectedVersion!==state._version)fail('Database đã thay đổi. Xem lại trước khi phục hồi.',409);
-    const restored=validateBackup(cmd.data, state.accounts);backup(state,'Trước phục hồi');
+    const restored=validateBackup(cmd.data, state.accounts);
     for(const root of ['tourStatus','tourConfig','groupsData','matches','players','suspensions','handledViolations','seasons'])state[root]=restored[root];
   } else if(cmd.kind==='reopen') {
     const m=state.matches[cmd.matchId];if(user.role!=='admin')fail('Chỉ BTC được mở lại.',403);
@@ -261,7 +255,7 @@ export function applyCommand(original,cmd,user) {
         if(user.role!=='admin'&&!(user.role==='approver'&&path==='tourConfig/minRestMinutes'))fail('Chỉ BTC được thay đổi dữ liệu giải.',403);
         if(root==='matches' && Object.values(original.matches||{}).some(m=>m.status!=='Sắp diễn ra'))fail('Không ghi đè lịch đã có trận tác nghiệp.');
         if(['groupsData','tourConfig'].includes(root) && Object.values(original.matches||{}).some(m=>m.status!=='Sắp diễn ra') && root==='groupsData')fail('Không thay bảng sau khi tác nghiệp.');
-        if(root==='matches'){backup(state,'Trước thay lịch');Object.keys(value||{}).forEach(id=>changed.add(id));}
+        if(root==='matches'){Object.keys(value||{}).forEach(id=>changed.add(id));}
         putPath(state,path,value);
       }
     }
@@ -322,6 +316,12 @@ export function applyCommand(original,cmd,user) {
     for(const [key,ban] of Object.entries(state.suspensions)) { if(!ban || !Number.isInteger(ban.remainingMatches) || ban.remainingMatches < 0 || ban.remainingMatches > 20 || !ban.reason || !ban.team) fail('Án phạt cần đội, lý do và số trận còn lại 0–20.'); if(ban.remainingMatches > 0 && !(state.players[ban.team]||[]).some(p=>key===`${ban.team}@@${p.id}`))fail('Án phạt không gắn cầu thủ hợp lệ.'); }
     validateSources(state);validateSchedule(state);
   } else fail('Loại thao tác không hợp lệ.');
+  if(state.tourStatus==='completed') {
+    if(user.role!=='admin')fail('Chỉ admin chính được khép giải.',403);
+    if(cmd.expectedVersion!==original._version)fail('Dữ liệu đã thay đổi. Kiểm tra lại trước khi khép giải.',409);
+    const empty=initialState();
+    for(const root of ['tourStatus','tourConfig','groupsData','matches','players','suspensions','handledViolations'])state[root]=empty[root];
+  }
   // Decisions survive resets/edits, but a changed source event is flagged for review.
   const violationIds=new Set(detectViolations(Object.values(state.matches),{},state.tourConfig).map(v=>v.key));
   for(const ban of Object.values(state.suspensions))if(ban.violationKey)ban.needsReview=!violationIds.has(ban.violationKey)||!!ban.eligibilityConflicts?.length;

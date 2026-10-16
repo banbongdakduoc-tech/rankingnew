@@ -204,10 +204,10 @@ Mở `/`, dùng các tab BXH, Lịch & Kết quả, Knockout, thống kê và đ
 
 BTC → **Điều lệ & dữ liệu** → xuất database JSON → giữ bản hiện hành → xem trước phục hồi → kiểm tra số đội/trận → xác nhận.
 
-- Chỉ dùng backup `schemaVersion: 2`. Phục hồi thay dữ liệu giải; giữ tài khoản hiện có, tạo backup trước phục hồi và kiểm tra toàn vẹn.
+- Chỉ dùng backup `schemaVersion: 2`. Phục hồi thay dữ liệu giải; giữ tài khoản hiện có và kiểm tra toàn vẹn. Không lưu bản sao tự động trên database.
 - Backup không chứa mật khẩu/tài khoản. Không import backup vào Firebase root bằng tay để sử dụng chức năng phục hồi.
 - Dữ liệu mẫu vòng bảng trong `test-data/` là bộ test để sinh knockout, không phải bản sao toàn bộ ghi chú/chữ ký/phân công của giải thật.
-- Reset mùa cần nhập đúng tên giải; lưu hồ sơ mùa và backup, giữ tài khoản. Chỉ reset sau khi đã xuất dữ liệu cần giữ.
+- Khi khép hoặc xóa/reset giải, hệ thống chỉ hỏi có tải JSON về máy không. Chọn Hủy trong câu hỏi tải JSON nghĩa là tiếp tục không tải. Sau thao tác, dữ liệu mùa giải được xóa khỏi database, tài khoản vẫn giữ. Nếu tải JSON thất bại thì thao tác dừng; nếu dữ liệu đổi trong lúc tải thì cần thực hiện lại. Khép giải cần duyệt hết trận. Database không lưu hồ sơ mùa cũ hoặc backup tự động; trang khán giả chỉ xem mùa hiện tại. Các hồ sơ/backup cũ được loại bỏ khi backend cập nhật dữ liệu.
 
 ## 11. Lỗi thao tác thường gặp
 

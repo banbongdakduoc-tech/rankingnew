@@ -24,7 +24,7 @@ test('Sửa nội dung sau chữ ký phải ký lại hoặc có ngoại lệ',(
 test('Duyệt hợp lệ, staff không sửa, BTC phải mở lại có reason',()=>{let s=submitted();assert.equal(s.matches.m.signatureHash,reportHash(s.matches.m));s=applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin);assert.throws(()=>add(s,event),/không cho/);assert.throws(()=>applyCommand(s,command({'matches/m/date':'2026-10-03T08:00:00Z'},s),admin),/mở lại/);assert.throws(()=>applyCommand(s,{kind:'reopen',id:'r',matchId:'m',version:s.matches.m.version},admin),/lý do/);const reopened=applyCommand(s,{kind:'reopen',id:'r',matchId:'m',version:s.matches.m.version,reason:'Đối chiếu ghi nhầm'},admin);assert.equal(reopened.matches.m.revisions.length,1);assert.equal(reopened.matches.m.status,'Bị từ chối');});
 test('Version conflict chặn ghi đè nhưng chuỗi offline của chính mình có thể tiếp tục',()=>{let s=fixture();const first=command({'matches/m/clock':{elapsed:10,running:false,period:1}},s,'one');s=applyCommand(s,first,staff);const second={...command({'matches/m/clock':{elapsed:20,running:false,period:1}},fixture(),'two'),predecessors:{m:'one'}};s=applyCommand(s,second,staff);assert.equal(s.matches.m.clock.elapsed,20);assert.throws(()=>applyCommand(s,command({'matches/m/clock':{elapsed:30,running:false,period:1}},fixture()),staff),/thiết bị khác/);});
 test('Án cấm giữ qua knockout, không cho điểm danh',()=>{const s=fixture();s.suspensions['A@@pa']={reason:'Đỏ',team:'A',remainingMatches:1};assert.throws(()=>applyCommand(s,command({'matches/m/status':'Đang LIVE'},s),staff),/treo giò/);});
-test('Phục hồi backup lỗi không ảnh hưởng dữ liệu và không import account',()=>{const s=fixture(),before=structuredClone(s);assert.throws(()=>validateBackup({schemaVersion:2,groupsData:[],players:{},matches:{x:{id:'x',home:'X',away:'Y'}}}));assert.deepEqual(s,before);const backup=exportBackup(submitted());backup.accounts={evil:{role:'admin'}};const restored=applyCommand(submitted(),{kind:'restore',id:'restore',data:backup,expectedVersion:submitted()._version},admin);assert.equal(restored.accounts.evil,undefined);assert.ok(Object.keys(restored.backups).length);});
+test('Phục hồi backup lỗi không ảnh hưởng dữ liệu và không import account',()=>{const s=fixture(),before=structuredClone(s);assert.throws(()=>validateBackup({schemaVersion:2,groupsData:[],players:{},matches:{x:{id:'x',home:'X',away:'Y'}}}));assert.deepEqual(s,before);const backup=exportBackup(submitted());backup.accounts={evil:{role:'admin'}};const restored=applyCommand(submitted(),{kind:'restore',id:'restore',data:backup,expectedVersion:submitted()._version},admin);assert.equal(restored.accounts.evil,undefined);assert.deepEqual(restored.backups,{});});
 test('Không ghi trường signatureHash/version hoặc đổi điều lệ sau tác nghiệp',()=>{const s=fixture();assert.throws(()=>applyCommand(s,command({'matches/m/signatureHash':'fake'},s),admin),/kiểm toán/);assert.throws(()=>applyCommand(s,command({'tourConfig/halfDuration':30},s),admin),/điều lệ/);});
 test('Xử thua không tạo bàn cá nhân giả',()=>{const s=submitted();const next=applyCommand(s,command({'matches/m/status':'Đã xong','matches/m/resultType':'forfeit','matches/m/scoreA':3,'matches/m/scoreB':0,'matches/m/administrativeReason':'B bỏ cuộc','matches/m/signatureException':'Quyết định BTC'},s),admin);assert.equal(next.matches.m.scoreA,3);assert.equal(next.matches.m.events.length,1);});
 test('Winner sai bị chặn; KO hòa chưa luân lưu không duyệt',()=>{let s=submitted();s.matches.m.group='Vòng Knock-out';s.matches.m.signatureHash=reportHash(s.matches.m);assert.throws(()=>applyCommand(s,command({'matches/m/status':'Đã xong','matches/m/advancingTeam':'B'},s),admin),/khớp/);s.matches.m.events=[];s.matches.m.scoreA=0;s.matches.m.signatureHash=reportHash(s.matches.m);assert.throws(()=>applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin),/phân thắng/);});
@@ -33,9 +33,9 @@ test('Đội hình giả ID, trùng cầu thủ hoặc sửa hồ sơ đã tham 
   const s=fixture();for(const lineup of [[{id:'fake',num:10,name:'P',played:true}],[...s.matches.m.lineupA,...s.matches.m.lineupA]])assert.throws(()=>applyCommand(s,command({'matches/m/lineupA':lineup},s),admin),/Đội hình/);
   assert.throws(()=>applyCommand(s,command({'players/A':[]},s),admin),/biên bản/);
 });
-test('Reset có backup và giữ tài khoản, không xóa lịch sử audit',()=>{
+test('Reset không lưu backup và giữ tài khoản, không xóa lịch sử audit',()=>{
   const s=submitted();const cmd={id:'reset',kind:'reset',expectedVersion:s._version,confirmation:s.tourConfig.name};const next=applyCommand(s,cmd,admin);
-  assert.equal(next.tourStatus,'none');assert.deepEqual(next.matches,{});assert.deepEqual(next.accounts,s.accounts);assert.equal(Object.values(next.backups)[0].snapshot.matches.m.scoreA,1);assert.equal(next.audit.length,s.audit.length+1);
+  assert.equal(next.tourStatus,'none');assert.deepEqual(next.matches,{});assert.deepEqual(next.accounts,s.accounts);assert.deepEqual(next.backups,{});assert.equal(next.audit.length,s.audit.length+1);
   assert.throws(()=>applyCommand(s,{...cmd,confirmation:'wrong'},admin));
 });
 test('Bù giờ âm bị chặn, 20+3 đứng trước 20+4 dù displayMinute thiếu',()=>{
@@ -62,8 +62,19 @@ test('Đổi tên/số áo giữ ID và snapshot biên bản cũ',()=>{
   const s=submitted();const next=applyCommand(s,command({'players/A':[{...s.players.A[0],num:11,name:'New name'}]},s),admin);assert.equal(next.players.A[0].id,'pa');assert.equal(next.matches.m.events[0].player,'10 - P');assert.deepEqual(next.players.A[0].profileHistory,[{num:10,name:'P'}]);
   assert.equal(applyCommand(next,command({'matches/m/status':'Đã xong'},next),admin).matches.m.status,'Đã xong');
 });
-test('Reset lưu hồ sơ mùa giải công khai không có chữ ký/tài khoản',()=>{
-  const s=submitted();const next=applyCommand(s,{id:'season-reset',kind:'reset',expectedVersion:s._version,confirmation:s.tourConfig.name},admin);const season=Object.values(next.seasons)[0];assert.equal(season.data.matches.m.scoreA,1);assert.equal(season.data.matches.m.signatures,undefined);assert.equal(season.data.accounts,undefined);assert.equal(publicState(next).seasonHistory[0].name,s.tourConfig.name);
+test('Reset không lưu hồ sơ; export chỉ chứa dữ liệu mùa hiện tại',()=>{
+ const s=submitted();s.seasons={old:{data:{private:'old'}}};s.backups={old:{snapshot:{matches:{old:{}}}}};
+ const exported=exportBackup(s);assert.equal(exported.seasons,undefined);assert.equal(exported.backups,undefined);assert.equal(exported.matches.m.scoreA,1);
+ const next=applyCommand(s,{id:'season-reset',kind:'reset',expectedVersion:s._version,confirmation:s.tourConfig.name},admin);
+ assert.deepEqual(next.seasons,{});assert.deepEqual(next.backups,{});assert.deepEqual(next.matches,{});assert.equal(publicState(next).seasonHistory,undefined);
+});
+test('Khép giải xóa dữ liệu mùa, giữ tài khoản; chặn khi chưa duyệt và phiên bản cũ',()=>{
+ const pending=submitted();assert.throws(()=>applyCommand(pending,command({tourStatus:'completed'},pending),admin),/duyệt/);
+ const s=applyCommand(pending,command({'matches/m/status':'Đã xong'},pending),admin),snapshot=exportBackup(s);
+ assert.throws(()=>applyCommand(s,{...command({tourStatus:'completed'},s),expectedVersion:0},admin),e=>e.status===409);
+ const next=applyCommand(s,command({tourStatus:'completed'},s),admin);
+ assert.equal(next.tourStatus,'none');for(const key of ['matches','players','suspensions','handledViolations','seasons','backups'])assert.deepEqual(next[key],{});
+ assert.deepEqual(next.groupsData,[]);assert.deepEqual(next.accounts,s.accounts);assert.equal(snapshot.matches.m.scoreA,1);assert.throws(()=>applyCommand(next,command({tourStatus:'completed'},next,'done'),{username:'sec',role:'referee'}),e=>e.status===403);
 });
 test('Cấu hình hiệp phụ: hòa KO chưa hết hiệp phụ không được duyệt',()=>{
   const s=submitted();s.tourConfig.extraTimeMinutes=5;s.matches.m.group='Vòng Knock-out';s.matches.m.events=[];s.matches.m.scoreA=0;s.matches.m.signatureHash=reportHash(s.matches.m);assert.throws(()=>applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin),/hiệp phụ/);

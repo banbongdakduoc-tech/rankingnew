@@ -16,6 +16,7 @@ const valueAt = path => path ? path.split('/').reduce((v,p)=>v?.[p],state) : sta
 function publish(){for(const sub of subscriptions){const value=valueAt(sub.path);sub.callback({val:()=>structuredClone(value ?? null),exists:()=>value!=null});}}
 function status(patch){meta={...meta,...patch};for(const fn of metaListeners)fn(meta);}
 export function subscribeSync(fn){metaListeners.add(fn);fn(meta);return()=>metaListeners.delete(fn);}
+export const tournamentVersion=()=>state._version || 0;
 export function syncSnapshot(){return meta;}
 function accept(data,{cached=false}={}){if(!data || data.schemaVersion!==2)return;if(!cached&&Number.isFinite(data.serverTime)){timeSkew=data.serverTime-Date.now();localStorage.setItem(skewKey,String(timeSkew));}state=data;loaded=true;status({loading:false,error:'',updatedAt:Date.now()});publish();cacheState('put',{id:user()?.username || 'public',data}).catch(()=>status({error:'Không lưu được bản xem offline. Kiểm tra bộ nhớ trình duyệt.'}));}
 export async function request(endpoint,options={}) {
@@ -94,5 +95,5 @@ export const update=(reference,data)=>write(reference,data,true);
 export const remove=reference=>write(reference,null);
 export async function reopenMatch(match,reason){return sendCommand({kind:'reopen',matchId:match.id,version:match.version||0,reason});}
 export async function importBackup(data){return sendCommand({kind:'restore',data,expectedVersion:state._version || 0});}
-export async function resetTournament(confirmation){return sendCommand({kind:'reset',confirmation,expectedVersion:state._version || 0});}
+export async function resetTournament(confirmation,expectedVersion=state._version || 0){return sendCommand({kind:'reset',confirmation,expectedVersion});}
 export async function downloadBackup(id){const response=await fetch(`${API}/api/backup/${id || 'export'}`,{headers:{Authorization:`Bearer ${token()}`}});if(!response.ok)throw new Error('Không tải được backup.');return response.blob();}

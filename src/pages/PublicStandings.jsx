@@ -1,7 +1,7 @@
 // src/pages/PublicStandings.jsx
 import { useState, useEffect } from 'react';
 import { ref, onValue } from '../services/dataService';
-import { db, request } from '../services/dataService';
+import { db } from '../services/dataService';
 import {
   Trophy,
   Calendar,
@@ -60,22 +60,18 @@ export default function PublicStandings() {
   const [viewingMatch, setViewingMatch] = useState(null);
   const [viewingPlayerStats, setViewingPlayerStats] = useState(null);
 
-  const [seasonId,setSeasonId]=useState('');
-  const [seasonHistory,setSeasonHistory]=useState([]);
-  const [seasonError,setSeasonError]=useState('');
   const [statsPhase,setStatsPhase]=useState('all');
   useEffect(()=>{
     let active=true;
     const apply=data=>{if(!active)return;setTourConfig(data.tourConfig);setTourStatus(data.tourStatus);setGroupsData(data.groupsData||[]);const list=numberMatchesBySchedule(Object.values(data.matches||{})).filter(m=>!['Chờ duyệt','Bị từ chối'].includes(m.status));setMatches(list);setPlayers(data.players||{});setSuspensions(data.suspensions||{});const requested=new URLSearchParams(window.location.search).get('match');if(requested)setViewingMatch(list.find(m=>m.id===requested)||null);};
-    const stop=onValue(ref(db),snap=>{const data=snap.val();if(!data)return;setSeasonHistory(data.seasonHistory||[]);if(!seasonId)apply(data);});
-    if(seasonId)request(`/api/seasons/${encodeURIComponent(seasonId)}`).then(res=>{apply(res.data);setSeasonError('');}).catch(e=>{if(active)setSeasonError(e.message);});
+    const stop=onValue(ref(db),snap=>{const data=snap.val();if(!data)return;apply(data);});
     return()=>{active=false;stop();};
-  },[seasonId]);
+  },[]);
 
   // Not started state
   if (tourStatus === 'none' || tourStatus === 'config' || tourStatus === 'setup_teams') {
     return (
-      <div className="app-container">{seasonHistory.length>0&&<label className="form-label mb16">Hồ sơ mùa giải<select className="select-dark" value={seasonId} onChange={e=>{setSeasonId(e.target.value);setFavorite('');setViewingMatch(null);}}><option value="">Mùa hiện hành</option>{seasonHistory.map(s=><option key={s.id} value={s.id}>{s.name} · {new Date(s.at).toLocaleDateString('vi-VN')}</option>)}</select></label>}{seasonError&&<p className="text-red" role="alert">{seasonError}</p>}
+      <div className="app-container">
         <div className="card text-center" style={{ padding: '60px 20px', maxWidth: '600px', margin: '40px auto' }}>
           <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(0,255,135,0.1)', border: '1px solid rgba(0,255,135,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Trophy size={32} className="text-accent" />
@@ -128,7 +124,7 @@ export default function PublicStandings() {
   const completedGroupMatches = matches.filter((m) => m.group !== 'Vòng Knock-out' && m.status === 'Đã xong').length;
 
   return (
-    <div className="app-container animate-fade-in">{seasonHistory.length>0&&<label className="form-label mb16">Hồ sơ mùa giải<select className="select-dark" value={seasonId} onChange={e=>{setSeasonId(e.target.value);setFavorite('');setViewingMatch(null);}}><option value="">Mùa hiện hành</option>{seasonHistory.map(s=><option key={s.id} value={s.id}>{s.name} · {new Date(s.at).toLocaleDateString('vi-VN')}</option>)}</select></label>}{seasonError&&<p className="text-red" role="alert">{seasonError}</p>}
+    <div className="app-container animate-fade-in">
       {publicTab==='thongke'&&<label className="form-label mb16">Phạm vi thống kê<select className="select-dark" value={statsPhase} onChange={e=>setStatsPhase(e.target.value)}><option value="all">Toàn giải</option><option value="group">Vòng bảng</option><option value="ko">Knockout</option></select></label>}
       {rankingInfo && <div className="modal-backdrop" onClick={() => setRankingInfo(null)}><div className="modal-card" onClick={e => e.stopPropagation()} style={{ padding: 24 }}><div className="modal-header"><h3 className="text-accent">Giải thích thứ hạng · {rankingInfo.groupName}</h3><button className="btn ghost" onClick={() => setRankingInfo(null)}>Đóng</button></div><p className="text-dim mb12">Điểm → bảng phụ H2H (Điểm, GD, GF) → GD toàn bảng → GF toàn bảng → tên. Hai lượt đối đầu đều được xét; nhóm con còn bằng nhau được xét lại theo điều lệ.</p><table className="dpl-table"><thead><tr><th>Đội</th><th>Điểm</th><th>Tiêu chí</th></tr></thead><tbody>{calculateGroupStandings(rankingInfo.teams, matches.filter(m => m.group === rankingInfo.groupName), { provisional }).map(t => <tr key={t.name}><td>{t.name}</td><td>{t.pts}</td><td>{t.tieBreak || 'Khác điểm'} · GD toàn bảng {t.gd} · GF {t.gf}</td></tr>)}</tbody></table></div></div>}
       {/* MODALS DISPLAY: NẾU ĐANG XEM TRẬN THÌ HIỆN MATCH DETAIL, KHI ĐÓNG TRẬN SẼ TRẢ VỀ HỒ SƠ CẦU THỦ */}

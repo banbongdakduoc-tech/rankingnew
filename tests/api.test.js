@@ -36,6 +36,6 @@ test('API thực: auth, public DTO, quyền, validation, đồng thời, backup 
     assert.ok(!JSON.stringify(db.get('audit')).includes(body.password));
   });
   await t.test('Thu hồi account làm token cũ vô hiệu',async()=>{await db.mutate(state=>{state.accounts.sec.disabled=true;return state;});assert.equal((await call('/api/tournament/data',null,staff)).status,401);});
-  await t.test('Hồ sơ mùa đã reset truy cập công khai có allowlist, ID sai trả 404',async()=>{const state=db.getAll();const reset=await call('/api/state/commands',{id:'reset-season',kind:'reset',expectedVersion:state._version,confirmation:state.tourConfig.name},admin);assert.equal(reset.status,200);const id=Object.keys(db.get('seasons'))[0],result=await call(`/api/seasons/${id}`);assert.equal(result.status,200);assert.equal(result.data.data.accounts,undefined);assert.equal(result.data.data.matches.m.signatures,undefined);assert.equal((await call('/api/seasons/missing')).status,404);});
+  await t.test('Reset không có hồ sơ mùa hoặc API lịch sử',async()=>{const state=db.getAll();const reset=await call('/api/state/commands',{id:'reset-season',kind:'reset',expectedVersion:state._version,confirmation:state.tourConfig.name},admin);assert.equal(reset.status,200);assert.deepEqual(db.get('seasons'),{});assert.deepEqual(db.get('backups'),{});assert.equal(reset.data.data.seasonHistory,undefined);assert.equal((await fetch(url+'/api/seasons/missing')).status,404);});
 
 });
