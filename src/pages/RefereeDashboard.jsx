@@ -248,18 +248,12 @@ export default function RefereeDashboard() {
   const handleStartMatch = async () => {
     try {
 
-    await update(ref(db, `matches/${selectedMatch.id}`), {
-      status: 'Đang LIVE',
-      lineupA,
-      lineupB,
-      clock: { elapsed: 0, running: true, startedAt: Date.now(), period: 1 }
+    const startClock={elapsed:0,running:true,startedAt:Date.now(),period:1};
+    const result=await update(ref(db, `matches/${selectedMatch.id}`), {
+      status:'Đang LIVE',lineupA,lineupB,clock:startClock
     });
-
-    setClock({ elapsed: 0, running: true, startedAt: Date.now(), period: 1 });
-    // Bắt đầu bấm giờ realtime
-    setTimerSeconds(0);
-    setIsTimerRunning(true);
-    setMatchPeriod(1);
+    // Online acknowledgements already contain the normalized server clock.
+    if(result.queued){setClock(startClock);setTimerSeconds(0);setIsTimerRunning(true);setMatchPeriod(1);}
 
     toast.info('Trận đấu đã chính thức bắt đầu (Hiệp 1)! Đồng hồ đang chạy realtime.');
     setStep(4);
@@ -323,13 +317,13 @@ export default function RefereeDashboard() {
     const result = await sendCommand({ kind: 'events', matchId: selectedMatch.id, baseVersion: selectedMatch.version || 0, add: [newEv], remove: [] }, { offline: true });
 
     // Cập nhật State cục bộ NGAY LẬP TỨC (0ms latency - nhảy số liền!)
-    setEvents(newEvents);
+    if(result.queued){setEvents(newEvents);
     setSelectedMatch((prev) => ({
       ...prev,
       events: newEvents,
       scoreA: goalsA,
       scoreB: goalsB
-    }));
+    }));}
 
     // Đồng bộ lên Firebase Realtime Database
 
@@ -353,7 +347,7 @@ export default function RefereeDashboard() {
     if (!reason?.trim()) return;
     const result = await sendCommand({ kind: 'events', matchId: selectedMatch.id, baseVersion: selectedMatch.version || 0, add: [], remove: [id], reason }, { offline: true });
     const next = events.filter(e => e.id !== id), score = calculateEventsGoals(next, selectedMatch.home, selectedMatch.away);
-    setEvents(next); setSelectedMatch(prev => ({ ...prev, events: next, scoreA: score.goalsA, scoreB: score.goalsB }));
+    if(result.queued){setEvents(next); setSelectedMatch(prev => ({ ...prev, events: next, scoreA: score.goalsA, scoreB: score.goalsB }));}
     toast.info(result.queued ? 'Đã lưu yêu cầu hủy trên máy' : 'Đã hủy sự kiện và cập nhật tỷ số');
 
     } catch (error) { toast.error(error.message || "Không lưu được dữ liệu."); }

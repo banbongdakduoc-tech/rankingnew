@@ -4,6 +4,7 @@ import { chooseAvatarImage } from '../services/avatarService';
 import { useState, useEffect } from 'react';
 import { ref, set, update, onValue } from '../services/dataService';
 import { db, reopenMatch, resetTournament, sendCommand, downloadBackup, tournamentVersion } from '../services/dataService';
+import LiveMatchClock from '../components/LiveMatchClock';
 import DisciplineMatchSource from '../components/DisciplineMatchSource';
 import AdminTools from '../components/AdminTools';
 import SecretaryAccounts from '../components/SecretaryAccounts';
@@ -1399,7 +1400,7 @@ export default function AdminDashboard({reviewOnly=false}) {
                             )}
                           </td>
                           <td data-label="Thư ký phụ trách"><select className="select-dark" aria-label={`Thư ký phụ trách: ${m.home} - ${m.away}`} disabled={tourStatus==='completed'||m.status==='Đã xong'} value={m.assignedSecretary||''} onChange={async e=>{const username=e.target.value;const account=secretaryAccounts.find(a=>a.username===username);try{await update(ref(db,`matches/${m.id}`),{assignedSecretary:username,sec:account?.name||''});toast.success('Đã lưu phân công thư ký.');}catch(err){toast.error(err.message);}}}><option value="">Chưa phân công</option>{secretaryAccounts.filter(a=>!a.disabled||a.username===m.assignedSecretary).map(a=><option key={a.username} value={a.username}>{a.name}{a.disabled?' (đã khóa)':''}</option>)}</select></td>
-                          <td data-label="Trạng thái"><span className="badge badge-ghost">{m.status}</span></td>
+                          <td data-label="Trạng thái"><span className="badge badge-ghost">{m.status}</span>{m.status==='Đang LIVE'&&<div><LiveMatchClock match={m} halfDuration={tourConfig.halfDuration || 20} extraTimeMinutes={Number(tourConfig.extraTimeMinutes || 0)}/></div>}</td>
                           <td data-label="Biên bản">
                             <div style={{ display: 'flex', gap: '4px' }}>
                               <button disabled={reviewOnly&&m.status!=='Chờ duyệt'} className="btn ghost tiny" title="Xem / sửa biên bản trận đấu" onClick={() => handleOpenReview(m)}>

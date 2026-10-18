@@ -11,8 +11,8 @@ const pick=(value,fields)=>Object.fromEntries(fields.filter(f=>value?.[f]!==unde
 export function publicState(data) {
   const matches=Object.fromEntries(Object.entries(data.matches || {}).map(([id,m])=>{
     // Explicit allowlist: public results never carry signatures, account data or staff notes.
-    const fields=['id','group','round','roundNumber','home','away','date','venue','status','scoreA','scoreB','penA','penB','events','advancingTeam','clock','version','resultType','administrativeReason','shootout','shootoutRounds','sourceHome','sourceAway'];
-    const out=pick(m,fields);out.events=(m.events||[]).map(e=>pick(e,['id','type','detail','team','player','playerId','minute','addedMinute','period','displayMinute','phase','sequence','cancelled']));
+    const fields=['id','group','round','roundNumber','home','away','date','venue','ref','sec','status','scoreA','scoreB','penA','penB','events','advancingTeam','clock','version','resultType','administrativeReason','shootout','shootoutRounds','sourceHome','sourceAway'];
+    const out=pick(m,fields);out.sec=m.sec||data.accounts?.[m.assignedSecretary]?.name||'';out.events=(m.events||[]).map(e=>pick(e,['id','type','detail','team','player','playerId','minute','addedMinute','period','displayMinute','phase','sequence','cancelled']));
     if(m.shootout)out.shootout=m.shootout.map(k=>pick(k,['id','team','playerId','player','result','sequence','cancelled']));
     if(m.clock)out.clock=pick(m.clock,['elapsed','startedAt','period','running','timeBasis']);return [id,out];
   }));

@@ -1,3 +1,4 @@
+import LiveMatchClock from './LiveMatchClock';
 import { askText } from '../services/promptService';
 import { compareEvents } from '../services/tournamentService';
 // src/components/MatchDetailModal.jsx
@@ -20,6 +21,8 @@ export default function MatchDetailModal({
   onClose,
   onPrint,
   isPublicView = false,
+  halfDuration=20,
+  extraTimeMinutes=0,
   backLabel = 'Đóng'
 }) {
   if (!match) return null;
@@ -145,6 +148,7 @@ export default function MatchDetailModal({
               </div>
             </div>
 
+            <div className="text-center mb12"><LiveMatchClock match={match} halfDuration={halfDuration} extraTimeMinutes={extraTimeMinutes}/></div>
             {/* Officials Info */}
             <div className="match-officials-bar">
               <div className="official-chip">

@@ -24,6 +24,7 @@ import {
   isGroupStageFinished,
   getQualifyingCount
 } from '../services/tournamentService';
+import LiveMatchClock from '../components/LiveMatchClock';
 import MatchDetailModal from '../components/MatchDetailModal';
 import KnockoutBracket from '../components/KnockoutBracket';
 import PlayerStatsDetailModal from '../components/PlayerStatsDetailModal';
@@ -131,6 +132,8 @@ export default function PublicStandings() {
       {viewingMatch ? (
         <MatchDetailModal
           match={matches.find(m => m.id === viewingMatch.id) || viewingMatch}
+          halfDuration={tourConfig.halfDuration || 20}
+          extraTimeMinutes={Number(tourConfig.extraTimeMinutes || 0)}
           isPublicView={true}
           backLabel={viewingPlayerStats ? 'Quay lại hồ sơ cầu thủ' : 'Đóng'}
           onClose={() => { setViewingMatch(null); const url = new URL(window.location.href); url.searchParams.delete('match'); window.history.replaceState({}, '', url); }}
@@ -177,6 +180,7 @@ export default function PublicStandings() {
                   </div>
                 </div>
 
+                <div className="text-center mb12"><LiveMatchClock match={m} halfDuration={tourConfig.halfDuration || 20} extraTimeMinutes={Number(tourConfig.extraTimeMinutes || 0)}/></div>
                 <div className="live-scoreboard">
                   <div className="live-team home">{m.home}</div>
                   <div className="live-score-display">
@@ -195,7 +199,7 @@ export default function PublicStandings() {
 
                 <div className="flex-between mt8" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
                   <span className="text-dim" style={{ fontSize: '12px' }}>
-                    {m.ref ? `TT: ${m.ref}` : 'Bấm xem diễn biến'}
+                    TT: {m.ref || 'Chưa phân công'} · TK: {m.sec || 'Chưa phân công'}
                   </span>
                   <span className="btn ghost tiny" style={{ color: 'var(--accent-green)' }}>
                     Chi tiết <ChevronRight size={12} />
@@ -511,7 +515,7 @@ export default function PublicStandings() {
                           <td className="text-accent font-bold">
                             {formatDateTime(m.date)}
                           </td>
-                          <td className="text-dim">{m.ref || 'Chưa phân công'}</td>
+                          <td className="text-dim">{m.ref || 'Chưa phân công'}<div>Thư ký: {m.sec || 'Chưa phân công'}</div></td>
                           <td>
                             <button
                               className="btn ghost tiny"

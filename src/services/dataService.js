@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { isFreshSnapshot } from './stateFreshness';
 import { createQueueFlusher } from './commandQueue';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -18,7 +19,7 @@ function status(patch){meta={...meta,...patch};for(const fn of metaListeners)fn(
 export function subscribeSync(fn){metaListeners.add(fn);fn(meta);return()=>metaListeners.delete(fn);}
 export const tournamentVersion=()=>state._version || 0;
 export function syncSnapshot(){return meta;}
-function accept(data,{cached=false}={}){if(!data || data.schemaVersion!==2)return;if(!cached&&Number.isFinite(data.serverTime)){timeSkew=data.serverTime-Date.now();localStorage.setItem(skewKey,String(timeSkew));}state=data;loaded=true;status({loading:false,error:'',updatedAt:Date.now()});publish();cacheState('put',{id:user()?.username || 'public',data}).catch(()=>status({error:'Không lưu được bản xem offline. Kiểm tra bộ nhớ trình duyệt.'}));}
+function accept(data,{cached=false}={}){if(!data || data.schemaVersion!==2||!cached&&!isFreshSnapshot(state,data))return;if(!cached&&Number.isFinite(data.serverTime)){timeSkew=data.serverTime-Date.now();localStorage.setItem(skewKey,String(timeSkew));}state=data;loaded=true;status({loading:false,error:'',updatedAt:Date.now()});publish();cacheState('put',{id:user()?.username || 'public',data}).catch(()=>status({error:'Không lưu được bản xem offline. Kiểm tra bộ nhớ trình duyệt.'}));}
 export async function request(endpoint,options={}) {
   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),20000);
   try {
@@ -26,7 +27,17 @@ export async function request(endpoint,options={}) {
     const data=await response.json();if(!response.ok){const error=new Error(data.message || `HTTP ${response.status}`);error.status=response.status;throw error;}return data;
   } finally {clearTimeout(timeout);}
 }
-export async function refreshData(){try{const response=await request('/api/tournament/data');if(response.data?.schemaVersion!==2)throw new Error('Backend chưa hỗ trợ phiên bản demo v2. Cần cấu hình backend demo trước.');accept(response.data);}catch(e){status({loading:false,error:e.message});throw e;}}
+let refreshFlight;
+export function refreshData(){
+  if(refreshFlight)return refreshFlight;
+  const requestedToken=token();
+  refreshFlight=request('/api/tournament/data').then(response=>{
+    if(requestedToken!==token())return;
+    if(response.data?.schemaVersion!==2)throw new Error('Backend chưa hỗ trợ schema dữ liệu hiện tại.');
+    accept(response.data);status({connected:true,loading:false});
+  }).catch(e=>{status({loading:false,connected:!!socket?.connected,error:e.message});throw e;}).finally(()=>{refreshFlight=null;});
+  return refreshFlight;
+}
 async function connect(){
   if(socket || connecting)return;
   connecting=true;
@@ -57,14 +68,22 @@ export async function discardConflict(id){await queueStore('delete',id);await up
 export async function exportLocalQueue(){return (await queueStore('getAll')).filter(x=>x.owner===user()?.username);}
 export const flushQueue=createQueueFlusher({
   entries:()=>queueStore('getAll'),owner:()=>user()?.username,
-  canSend:()=>!!token()&&navigator.onLine&&meta.connected,
+  canSend:()=>!!token()&&navigator.onLine&&(!!socket?.connected||meta.connected),
   send:command=>request('/api/state/commands',{method:'POST',body:JSON.stringify({...command,clientNow:Date.now()})}),
   accept:result=>accept(result.data),save:entry=>queueStore('put',entry),remove:id=>queueStore('delete',id),
   error:(e,entry)=>{if(e.status===422&&entry)rejectedErrors.set(entry.id,e.message);status(e.status?{error:e.message}:{connected:false,error:'Thao tác đã lưu trên máy, đang chờ gửi lại.'});},
-  settled:updateQueueStatus
+  settled:async()=>{await updateQueueStatus();if(!meta.pending&&!meta.conflicts.length&&socket?.connected)status({connected:true,error:''});}
 });
 window.addEventListener('online',()=>{if(!socket)connect();flushQueue();});
-setInterval(()=>{if(!socket&&!connecting&&navigator.onLine&&subscriptions.size)connect();},10000);
+async function recoverSync(){
+  if(!navigator.onLine||!subscriptions.size||document.visibilityState==='hidden')return;
+  if(!socket&&!connecting)connect();else if(socket&&!socket.connected)socket.connect();
+  try{await refreshData();await flushQueue();}catch{/* Retain drafts until the next retry. */}
+}
+setInterval(recoverSync,5000);
+window.addEventListener('online',recoverSync);
+window.addEventListener('focus',recoverSync);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')recoverSync();});
 export async function sendCommand(command,{offline=false}={}) {
   command={...command,id:command.id || crypto.randomUUID()};
   if(!token())throw new Error('Đăng nhập lại trước khi lưu.');
