@@ -163,3 +163,13 @@ test('Mở lại → trả thư ký → sửa → ký lại → nộp → duyệ
  s=applyCommand(s,command({'matches/m/status':'Đã xong'},s),admin);
  assert.equal(s.matches.m.scoreA,1);assert.equal(s.matches.m.status,'Đã xong');assert.equal(s.matches.m.revisions.length,1);
 });
+
+test('Xóa cầu thủ lưu ngay đúng ID, xóa người cuối được; cầu thủ có biên bản bị chặn nguyên tử',()=>{
+ const s=fixture();s.players.A.push({id:'unused',team:'A',num:12,name:'Chưa tham gia',avatar:''});
+ const next=applyCommand(s,command({'players/A':s.players.A.filter(p=>p.id!=='unused')},s),admin);
+ assert.deepEqual(next.players.A.map(p=>p.id),['pa']);assert.deepEqual(next.matches,s.matches);
+ const empty=applyCommand(next,command({'players/C':[]},next),admin);assert.deepEqual(empty.players.C,[]);
+ const before=structuredClone(next);
+ assert.throws(()=>applyCommand(next,command({'players/A':[]},next),admin),/Không thể xóa #10 P/);assert.deepEqual(next,before);
+ assert.throws(()=>applyCommand(s,command({'players/A':[]},s),staff),e=>e.status===403);
+});

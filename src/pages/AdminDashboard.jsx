@@ -829,6 +829,24 @@ export default function AdminDashboard({reviewOnly=false}) {
     toast.success('Đã tải xuống file template_cauthu.json!');
   };
 
+  const [deletingPlayerId,setDeletingPlayerId]=useState(null);
+  const handleDeleteRosterPlayer = async (player,index) => {
+    if(deletingPlayerId || !editTeam)return;
+    if(!window.confirm(`Xóa cầu thủ #${player.num} ${player.name} khỏi đội ${editTeam}? Thao tác này được lưu ngay.`))return;
+    const team=editTeam;
+    const persisted=(players[team] || []).find(p=>p.id===player.id);
+    if(!persisted){setEditingPlayers(list=>list.filter((_,i)=>i!==index));return;}
+    setDeletingPlayerId(player.id);
+    try {
+      // Delete just this record from the latest roster; don't save unrelated draft edits.
+      const remaining=(players[team] || []).filter(p=>p.id!==player.id);
+      await set(ref(db,`players/${team}`),remaining);
+      setEditingPlayers(list=>list.filter(p=>p.id!==player.id));
+      toast.success(`Đã xóa cầu thủ #${persisted.num} ${persisted.name}.`);
+    }catch(error){toast.error(error.message || 'Không xóa được cầu thủ. Danh sách vẫn được giữ nguyên.');}
+    finally{setDeletingPlayerId(null);}
+  };
+
   const handleSaveTeamEdit = async () => {
     try {
 
@@ -2494,7 +2512,11 @@ export default function AdminDashboard({reviewOnly=false}) {
                                 <td style={{ textAlign: 'center' }}>
                                   <button
                                     className="btn danger tiny"
-                                    onClick={() => setEditingPlayers(editingPlayers.filter((_, i) => i !== idx))}
+                                    type="button"
+                                    disabled={!!deletingPlayerId}
+                                    aria-label={`Xóa cầu thủ ${p.name}`}
+                                    title="Xóa cầu thủ và lưu ngay"
+                                    onClick={() => handleDeleteRosterPlayer(p,idx)}
                                   >
                                     <Trash2 size={12} />
                                   </button>
