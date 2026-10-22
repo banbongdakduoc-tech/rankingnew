@@ -24,6 +24,7 @@ import {
   isGroupStageFinished,
   getQualifyingCount
 } from '../services/tournamentService';
+import LiveMatchClock from '../components/LiveMatchClock';
 import MatchDetailModal from '../components/MatchDetailModal';
 import KnockoutBracket from '../components/KnockoutBracket';
 import PlayerStatsDetailModal from '../components/PlayerStatsDetailModal';
@@ -179,6 +180,7 @@ export default function PublicStandings() {
                   </div>
                 </div>
 
+                <div className="text-center mb12"><LiveMatchClock match={m} halfDuration={tourConfig.halfDuration || 20} extraTimeMinutes={Number(tourConfig.extraTimeMinutes || 0)}/></div>
                 <div className="live-scoreboard">
                   <div className="live-team home">{m.home}</div>
                   <div className="live-score-display">
@@ -578,7 +580,7 @@ export default function PublicStandings() {
                               )}
                             </div>
                           </td>
-                          <td className="text-dim">{formatDateTime(m.date)}</td>
+                          <td className="text-dim">{formatDateTime(m.date)}<div>Thời gian thi đấu chính: {(tourConfig.halfDuration || 20)*2} phút</div></td>
                           <td>
                             <button
                               className="btn ghost tiny"

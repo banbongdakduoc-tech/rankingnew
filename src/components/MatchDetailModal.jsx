@@ -148,7 +148,7 @@ export default function MatchDetailModal({
               </div>
             </div>
 
-            {!isPublicView&&<div className="text-center mb12"><LiveMatchClock match={match} halfDuration={halfDuration} extraTimeMinutes={extraTimeMinutes}/></div>}
+            {<div className="text-center mb12"><LiveMatchClock match={match} halfDuration={halfDuration} extraTimeMinutes={extraTimeMinutes}/></div>}
             {/* Officials Info */}
             <div className="match-officials-bar">
               <div className="official-chip">

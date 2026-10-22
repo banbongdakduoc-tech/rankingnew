@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createVersionedBroadcaster } from './services/realtime.js';
 import http from 'node:http';
 import { Server } from 'socket.io';
 import { db } from './config/db.js';
@@ -7,7 +8,7 @@ import { authenticate } from './middleware/auth.js';
 import { publicState, staffState } from './services/stateEngine.js';
 await db.init();
 let io;
-function broadcast(state){for(const socket of io?.sockets.sockets.values() || []){try{const user=socket.handshake.auth?.token?authenticate(socket.handshake.auth.token,db):null;socket.emit('db_changed',user?staffState(state,user):publicState(state));}catch{socket.emit('session_expired');socket.disconnect(true);}}}
+const broadcast=createVersionedBroadcaster(state=>{for(const socket of io?.sockets.sockets.values() || []){try{const user=socket.handshake.auth?.token?authenticate(socket.handshake.auth.token,db):null;socket.emit('db_changed',user?staffState(state,user):publicState(state));}catch{socket.emit('session_expired');socket.disconnect(true);}}});
 db.subscribe(broadcast);
 const app=createApp(db,{broadcast}),server=http.createServer(app);
 io=new Server(server,{cors:{origin:(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(s=>s.trim()),methods:['GET','POST']},maxHttpBufferSize:15e6});

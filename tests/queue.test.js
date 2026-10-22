@@ -19,7 +19,7 @@ test('422 deleted from local queue; later valid correction sends and is not bloc
 });
 test('409 remains a conflict; offline command stays queued and retries without losing draft',async()=>{
  let online=false;const q=queue(async c=>{if(c.id==='conflict')throw Object.assign(new Error('Đổi trên thiết bị khác'),{status:409});if(!online)throw new Error('Network');return {};});
- q.add('conflict');q.add('offline');await q.flush();assert.equal(q.store.get('conflict').conflict,'Đổi trên thiết bị khác');assert.equal(q.store.get('offline').rejected,undefined);online=true;q.reconnect();await q.flush();assert.equal(q.store.has('offline'),false);assert.equal(q.store.has('conflict'),true);
+ q.add('conflict');q.add('offline');await q.flush();assert.equal(q.store.get('conflict').conflict,'Đổi trên thiết bị khác');assert.equal(q.store.get('offline').rejected,undefined);online=true;q.reconnect();for(const e of q.store.values())delete e.retryAt;await q.flush();assert.equal(q.store.has('offline'),false);assert.equal(q.store.has('conflict'),true);
 });
 test('4–1 kicks override stale 2–1 summary and printed score; cancellation recalculates',()=>{
  const kicks=[['A','scored'],['B','scored'],['A','scored'],['B','missed'],['A','scored'],['B','missed'],['A','scored']].map(([team,result],i)=>({team,result,playerId:`p${i}`}));
@@ -64,4 +64,12 @@ test('Red during shootout retains earlier valid kick; prevents future kick and r
  assert.equal(validateShootoutDraft(match,[kick],roster).penA,1);
  assert.throws(()=>validateShootoutDraft(match,[{...kick,sequence:6}],roster),/Thẻ đỏ/);
  assert.equal(shootoutRestrictions(match,roster).get('A@@a'),'Thẻ đỏ trực tiếp');
+});
+
+test('HTTP 500/503/429 là lỗi tạm: giữ nháp, giãn retry, không biến thành xung đột; 409 vẫn giữ để đối chiếu',async()=>{
+ for(const status of [500,503,429,408]){
+  let failed=false;const q=queue(async()=>{if(!failed){failed=true;throw Object.assign(new Error('Máy chủ bận'),{status});}return {};});
+  q.add('retry');await q.flush();const entry=q.store.get('retry');assert.equal(entry.conflict,undefined);assert.ok(entry.retryAt>Date.now());
+  await q.flush();assert.equal(q.sent.length,1);delete entry.retryAt;await q.flush();assert.equal(q.store.size,0);
+ }
 });
